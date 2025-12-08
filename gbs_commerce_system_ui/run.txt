@@ -1,0 +1,6 @@
+朱铭杰👋，你好啊
+
+
+好的，我要将这个前端项目gbs_commerce_system_ui，后端项目gbs_commerce_system，使用docker compose部署到腾讯云的云服务上去，
+前后端项目，你看看还需要哪里需要修改吗？我用的mcp服务集群和versatile agent都部署到公网ip的服务器上了，42.194.158.40
+你先检查前后端是否还有本地localhost1配置，然后修改docker-compose.yml文件，将前端项目gbs_commerce_system_ui，后端项目gbs_commerce_system的镜像地址修改为腾讯云的镜像地址，然后上传docker-compose.yml文件到服务器，然后执行docker-compose up -d

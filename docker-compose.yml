@@ -1,0 +1,54 @@
+version: '3.9'
+
+services:
+  mysql:
+    image: mysql:8.0.40
+    container_name: gbs-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-GbsMysqlPassw0rd}
+      MYSQL_DATABASE: gbs_commerce_system
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - gbs-net
+
+  backend:
+    image: ccr.ccs.tencentyun.com/supermarket/agent-backend:1.0.0
+    container_name: gbs-backend
+    restart: unless-stopped
+    depends_on:
+      - mysql
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/gbs_commerce_system?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-GbsMysqlPassw0rd}
+      APP_UPLOAD_DIR: /data/uploads
+      TZ: Asia/Shanghai
+    volumes:
+      - uploads-data:/data/uploads
+    networks:
+      - gbs-net
+
+  frontend:
+    image: ccr.ccs.tencentyun.com/supermarket/agent-frontend:1.0.0
+    container_name: gbs-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    networks:
+      - gbs-net
+
+volumes:
+  mysql-data:
+  uploads-data:
+
+networks:
+  gbs-net:
+    driver: bridge

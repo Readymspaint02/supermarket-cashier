@@ -1,0 +1,27 @@
+{
+  "name": "smartpos-web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.2",
+    "@tailwindcss/vite": "^4.1.13",
+    "axios": "^1.12.2",
+    "@chenfengyuan/vue-barcode": "^2.0.2",
+    "@zxing/library": "^0.20.0",
+    "echarts": "^6.0.0",
+    "element-plus": "^2.11.3",
+    "tailwindcss": "^4.1.13",
+    "vue": "^3.5.21",
+    "vue-router": "^4.5.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.1",
+    "vite": "^7.1.7"
+  }
+}
