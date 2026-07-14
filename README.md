@@ -68,6 +68,7 @@
 
 ## 项目结构
 
+```
 supermarket-cashier/
 ├── gbs_commerce_system/          # 后端项目
 │   ├── src/main/java/
@@ -87,6 +88,7 @@ supermarket-cashier/
 │       └── api/                  # API接口
 │
 └── docker-compose.yml            # Docker编排
+```
 
 ## 快速开始
 
