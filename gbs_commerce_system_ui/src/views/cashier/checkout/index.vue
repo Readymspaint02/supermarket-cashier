@@ -13,24 +13,28 @@
           </template>
 
           <div class="manual-panel">
-            <p class="manual-tip">输入商品编码或条形码并按回车，即可将商品加入购物车。</p>
-            <el-input
-              v-model="barcodeInput"
-              placeholder="请输入商品编码 / 条形码"
-              clearable
-              size="large"
-              @keyup.enter="handleManualScan"
-              ref="barcodeInputRef"
-            >
-              <template #prepend>
-                <el-icon><Search /></el-icon>
-              </template>
-              <template #append>
-                <el-button type="primary" :loading="manualLoading" @click="handleManualScan">
-                  添加商品
-                </el-button>
-              </template>
-            </el-input>
+            <p class="manual-tip">输入商品编码或条形码并按回车，或点击扫码按钮使用摄像头扫描。</p>
+            <div class="input-row">
+              <el-input
+                v-model="barcodeInput"
+                placeholder="请输入商品编码 / 条形码"
+                clearable
+                size="large"
+                @keyup.enter="handleManualScan"
+                ref="barcodeInputRef"
+              >
+                <template #prepend>
+                  <el-icon><Search /></el-icon>
+                </template>
+              </el-input>
+              <el-button size="large" @click="openScannerDialog">
+                <el-icon><Camera /></el-icon>
+                扫码
+              </el-button>
+              <el-button type="primary" size="large" :loading="manualLoading" @click="handleManualScan">
+                添加商品
+              </el-button>
+            </div>
           </div>
 
           <el-table
@@ -39,32 +43,32 @@
             stripe
             :height="420"
             v-loading="cartLoading"
-            show-summary
-            :summary-method="getSummaries"
             empty-text="暂无商品，请先输入编码"
           >
             <el-table-column type="index" label="序号" width="60" align="center" />
-            <el-table-column prop="productName" label="商品名称" min-width="150" />
-            <el-table-column prop="productCode" label="商品编码" width="140" show-overflow-tooltip />
-            <el-table-column prop="barcode" label="条形码" width="140" show-overflow-tooltip />
-            <el-table-column prop="price" label="单价" width="100" align="right">
+            <el-table-column prop="productName" label="商品名称" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="price" label="单价" width="90" align="right">
               <template #default="{ row }">¥{{ row.price.toFixed(2) }}</template>
             </el-table-column>
-            <el-table-column prop="quantity" label="数量" width="140" align="center">
+            <el-table-column prop="quantity" label="数量" width="160" align="center">
               <template #default="{ row }">
                 <el-input-number
                   v-model="row.quantity"
                   :min="1"
                   :max="row.stock"
-                  @change="handleQuantityChange(row)"
+                  :precision="0"
+                  :step="1"
+                  controls-position="right"
                   size="small"
+                  style="width: 130px"
+                  @change="handleQuantityChange(row)"
                 />
               </template>
             </el-table-column>
-            <el-table-column label="小计" width="120" align="right">
+            <el-table-column label="小计" width="100" align="right">
               <template #default="{ row }">¥{{ (row.price * row.quantity).toFixed(2) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="80" align="center" fixed="right">
+            <el-table-column label="操作" width="70" align="center">
               <template #default="{ $index }">
                 <el-button link type="danger" size="small" @click="removeFromCart($index)">删除</el-button>
               </template>
@@ -84,7 +88,7 @@
           <div class="settle-info">
             <div class="info-row">
               <span class="label">商品种类</span>
-              <span class="value">{{ cart.length }} 件</span>
+              <span class="value">{{ cart.length }} 种</span>
             </div>
             <div class="info-row">
               <span class="label">商品数量</span>
@@ -125,6 +129,7 @@
                 <el-radio :value="2" border>微信</el-radio>
                 <el-radio :value="3" border>支付宝</el-radio>
                 <el-radio :value="4" border>银行卡</el-radio>
+                <el-radio :value="5" border>刷脸支付</el-radio>
               </el-radio-group>
             </div>
 
@@ -177,16 +182,68 @@
         <el-button @click="handleContinue">继续收银</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      title="扫码识别"
+      v-model="scannerDialogVisible"
+      width="480px"
+      :close-on-click-modal="false"
+      @close="closeScanner"
+    >
+      <BarcodeScanner
+        v-if="scannerDialogVisible"
+        @detected="handleBarcodeDetected"
+        @close="closeScanner"
+      />
+    </el-dialog>
+
+    <el-dialog
+      title="刷脸支付"
+      v-model="facePayDialogVisible"
+      width="480px"
+      :close-on-click-modal="false"
+      @open="openFacePayDialog"
+      @close="closeFacePay"
+    >
+      <div class="face-pay-content">
+        <div class="face-tip">
+          <el-icon :size="24" color="#409eff"><Camera /></el-icon>
+          <span>请正对摄像头，系统将自动识别已注册会员</span>
+        </div>
+        
+        <div class="face-capture">
+          <video ref="faceVideoRef" autoplay playsinline class="face-video"></video>
+          <canvas ref="faceCanvasRef" style="display: none;"></canvas>
+          <div class="face-overlay" v-if="facePayDetecting">
+            <div class="detecting-animation">
+              <el-icon class="is-loading" :size="32"><Loading /></el-icon>
+              <span>正在识别中...</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="face-status" v-if="facePayStatus">
+          <el-alert :type="facePayStatus.type" :closable="false" show-icon>
+            {{ facePayStatus.message }}
+          </el-alert>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="closeFacePay">取消</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, CreditCard } from '@element-plus/icons-vue'
+import { Search, CreditCard, Camera, Loading } from '@element-plus/icons-vue'
 import { getProductByBarcode, getProductByCode } from '@/api/modules/product'
 import { getInventoryByProductId } from '@/api/modules/inventory'
 import { checkout } from '@/api/modules/order'
+import BarcodeScanner from '@/components/BarcodeScanner.vue'
+import http from '@/api/request'
 
 const barcodeInput = ref('')
 const barcodeInputRef = ref(null)
@@ -200,6 +257,16 @@ const remark = ref('')
 const checkoutLoading = ref(false)
 const successDialogVisible = ref(false)
 const currentOrder = ref(null)
+const scannerDialogVisible = ref(false)
+
+const facePayDialogVisible = ref(false)
+const faceVideoRef = ref(null)
+const faceCanvasRef = ref(null)
+const facePayStream = ref(null)
+const facePayDetecting = ref(false)
+const facePayStatus = ref(null)
+let facePayTimer = null
+let isFacePayProcessing = false
 
 const totalQuantity = computed(() =>
   cart.value.reduce((sum, item) => sum + item.quantity, 0)
@@ -355,11 +422,34 @@ const clearCart = () => {
     .catch(() => {})
 }
 
+const openScannerDialog = () => {
+  scannerDialogVisible.value = true
+}
+
+const closeScanner = () => {
+  scannerDialogVisible.value = false
+}
+
+const handleBarcodeDetected = async (code) => {
+  if (!code || !code.trim()) {
+    return
+  }
+  ElMessage.success(`识别到条码: ${code}`)
+  closeScanner()
+  await addProductByManual(code.trim())
+}
+
 const handleCheckout = () => {
   if (cart.value.length === 0) {
     ElMessage.warning('购物车为空')
     return
   }
+
+  if (paymentMethod.value === 5) {
+    facePayDialogVisible.value = true
+    return
+  }
+
   ElMessageBox.confirm(`确认结算 ¥${paidAmount.value.toFixed(2)} ?`, '结算确认', {
     type: 'info',
   })
@@ -401,13 +491,125 @@ const handleContinue = () => {
 }
 
 const getPaymentMethodName = (val) => {
-  const map = { 1: '现金', 2: '微信', 3: '支付宝', 4: '银行卡' }
+  const map = { 1: '现金', 2: '微信', 3: '支付宝', 4: '银行卡', 5: '刷脸支付' }
   return map[val] || '-'
 }
 
-const getSummaries = () => {
-  return ['合计', '', '', '', '', totalQuantity.value, `¥${totalAmount.value.toFixed(2)}`, '']
+const openFacePayDialog = async () => {
+  facePayStatus.value = null
+  facePayDetecting.value = false
+  isFacePayProcessing = false
+  
+  try {
+    facePayStream.value = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: 640, height: 480 }
+    })
+    if (faceVideoRef.value) {
+      faceVideoRef.value.srcObject = facePayStream.value
+    }
+    startFaceDetection()
+  } catch (error) {
+    ElMessage.error('无法访问摄像头')
+    console.error(error)
+    facePayStatus.value = { type: 'error', message: '无法访问摄像头，请检查权限设置' }
+  }
 }
+
+const startFaceDetection = () => {
+  if (facePayTimer) {
+    clearInterval(facePayTimer)
+  }
+  
+  facePayTimer = setInterval(() => {
+    if (!isFacePayProcessing && facePayDialogVisible.value) {
+      captureAndVerify()
+    }
+  }, 1500)
+}
+
+const stopFaceDetection = () => {
+  if (facePayTimer) {
+    clearInterval(facePayTimer)
+    facePayTimer = null
+  }
+}
+
+const captureAndVerify = async () => {
+  if (!faceVideoRef.value || !faceCanvasRef.value || isFacePayProcessing) {
+    return
+  }
+  
+  isFacePayProcessing = true
+  facePayDetecting.value = true
+  
+  try {
+    const video = faceVideoRef.value
+    const canvas = faceCanvasRef.value
+    
+    canvas.width = video.videoWidth || 640
+    canvas.height = video.videoHeight || 480
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    const base64Data = canvas.toDataURL('image/jpeg', 0.8).split(',')[1]
+    
+    const orderData = {
+      cartItems: cart.value.map((item) => ({
+        productId: item.productId,
+        quantity: item.quantity,
+      })),
+      paidAmount: paidAmount.value,
+      discountAmount: discountAmount.value,
+      remark: remark.value,
+      faceImage: base64Data
+    }
+    
+    const res = await http.post('/payment/facepay/search', orderData)
+    
+    if (res.code === 200) {
+      stopFaceDetection()
+      stopFaceCamera()
+      facePayDialogVisible.value = false
+      
+      currentOrder.value = res.data
+      successDialogVisible.value = true
+      cart.value = []
+      discountAmount.value = 0
+      remark.value = ''
+      
+      ElMessage.success('刷脸支付成功')
+    } else {
+      facePayStatus.value = { type: 'warning', message: res.msg || '识别失败，请重试' }
+    }
+  } catch (error) {
+    const errMsg = error?.msg || error?.message || '识别失败'
+    facePayStatus.value = { type: 'error', message: errMsg }
+  } finally {
+    facePayDetecting.value = false
+    isFacePayProcessing = false
+  }
+}
+
+const stopFaceCamera = () => {
+  if (facePayStream.value) {
+    facePayStream.value.getTracks().forEach(track => track.stop())
+    facePayStream.value = null
+  }
+  if (faceVideoRef.value) {
+    faceVideoRef.value.srcObject = null
+  }
+}
+
+const closeFacePay = () => {
+  stopFaceDetection()
+  stopFaceCamera()
+  facePayDialogVisible.value = false
+  facePayStatus.value = null
+}
+
+onBeforeUnmount(() => {
+  stopFaceDetection()
+  stopFaceCamera()
+})
 </script>
 
 <style scoped>
@@ -439,6 +641,13 @@ const getSummaries = () => {
   margin-bottom: 10px;
   color: #606266;
   font-size: 14px;
+}
+.input-row {
+  display: flex;
+  gap: 12px;
+}
+.input-row .el-input {
+  flex: 1;
 }
 .settle-card {
   position: sticky;
@@ -486,5 +695,61 @@ const getSummaries = () => {
   padding: 16px;
   border-radius: 8px;
   line-height: 1.8;
+}
+
+.face-pay-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.face-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: #f0f9ff;
+  border-radius: 8px;
+  color: #409eff;
+  font-size: 14px;
+}
+
+.face-capture {
+  width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+  position: relative;
+}
+
+.face-video {
+  width: 100%;
+  height: 320px;
+  object-fit: cover;
+  display: block;
+}
+
+.face-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.detecting-animation {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: #fff;
+}
+
+.face-status {
+  margin-top: 8px;
 }
 </style>
