@@ -3,9 +3,14 @@ import json
 import httpx
 from typing import Any, Dict, List, Optional
 from datetime import datetime
+from pathlib import Path
 
 from dotenv import load_dotenv
-load_dotenv()
+env_path = Path(__file__).parent / ".env.secrets"
+if env_path.exists():
+    load_dotenv(env_path)
+else:
+    load_dotenv()
 
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
