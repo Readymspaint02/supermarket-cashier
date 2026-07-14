@@ -1,14 +1,18 @@
 package com.zmj.gbs_commerce_system.controller;
 
+import com.zmj.gbs_commerce_system.annotation.RateLimit;
 import com.zmj.gbs_commerce_system.entity.User;
 import com.zmj.gbs_commerce_system.service.FaceAuthService;
+import com.zmj.gbs_commerce_system.service.TokenBlacklistService;
 import com.zmj.gbs_commerce_system.service.UserService;
 import com.zmj.gbs_commerce_system.utils.JwtUtils;
+import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import org.apache.shiro.SecurityUtils;
@@ -39,12 +43,16 @@ public class AuthController {
     @Autowired
     private FaceAuthService faceAuthService;
 
+    @Autowired
+    private TokenBlacklistService tokenBlacklistService;
+
     @PostMapping("/login")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "登录成功"),
             @ApiResponse(responseCode = "500", description = "用户名或密码错误")
     })
     @Operation(summary = "用户登录")
+    @RateLimit(value = 5, windowSeconds = 60, limitType = RateLimit.LimitType.IP, message = "登录请求过于频繁，请稍后再试")
     public Map<String, Object> login(@Valid @RequestBody LoginRequest request) {
         UsernamePasswordToken token = new UsernamePasswordToken(
                 request.getUsername(),
@@ -101,6 +109,7 @@ public class AuthController {
 
     @PostMapping("/faceLogin")
     @Operation(summary = "人脸识别登录")
+    @RateLimit(value = 10, windowSeconds = 60, limitType = RateLimit.LimitType.IP, message = "人脸登录请求过于频繁，请稍后再试")
     public Map<String, Object> faceLogin(@Valid @RequestBody FaceLoginRequest request) {
         Map<String, Object> result = new HashMap<>();
 
@@ -126,9 +135,21 @@ public class AuthController {
     }
 
     @GetMapping("/logout")
-    public Map<String, Object> logout() {
+    public Map<String, Object> logout(HttpServletRequest request) {
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            String token = authHeader.substring(7);
+            try {
+                Claims claims = JwtUtils.parseToken(token);
+                long exp = claims.getExpiration().getTime();
+                long ttl = exp - System.currentTimeMillis();
+                if (ttl > 0) {
+                    tokenBlacklistService.addToBlacklist(token, ttl);
+                }
+            } catch (Exception ignored) {
+            }
+        }
         SecurityUtils.getSubject().logout();
-
         Map<String, Object> result = new HashMap<>();
         result.put("code", 200);
         result.put("msg", "退出成功");

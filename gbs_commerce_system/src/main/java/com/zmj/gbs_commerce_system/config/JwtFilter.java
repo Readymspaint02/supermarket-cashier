@@ -58,6 +58,7 @@ package com.zmj.gbs_commerce_system.config;
  */
 
 import com.zmj.gbs_commerce_system.entity.User;
+import com.zmj.gbs_commerce_system.service.TokenBlacklistService;
 import com.zmj.gbs_commerce_system.service.UserService;
 import com.zmj.gbs_commerce_system.utils.JwtUtils;
 import io.jsonwebtoken.Claims;
@@ -74,23 +75,21 @@ import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.util.Date;
 
 public class JwtFilter extends AccessControlFilter {
 
-    // 【认证-01-依赖注入】UserService - 用于查询用户完整信息
-    // 注意：Filter不在Spring容器管理，无法用@Autowired注入
-    // 解决：在setServletContext中手动从WebApplicationContext获取Bean
     private UserService userService;
+    private TokenBlacklistService tokenBlacklistService;
+    private static final long RENEW_THRESHOLD = 5 * 60 * 1000L;
 
-    // 【认证-01-初始化】获取Spring容器中的UserService Bean
     @Override
     public void setServletContext(ServletContext servletContext) {
         super.setServletContext(servletContext);
-        // 从ServletContext获取Spring应用上下文
         WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(servletContext);
         if (context != null) {
-            // 手动获取UserService Bean
             this.userService = context.getBean(UserService.class);
+            this.tokenBlacklistService = context.getBean(TokenBlacklistService.class);
         }
     }
 
@@ -170,27 +169,30 @@ public class JwtFilter extends AccessControlFilter {
         token = token.substring(7);
 
         try {
-            // ========== 步骤2：验证Token有效性 ==========
-            // 验证内容：签名是否正确、是否过期
-            // 面试考点：JwtUtils如何验证？见JwtUtils.java
             if (!JwtUtils.validateToken(token)) {
                 httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                 httpResponse.getWriter().write("{\"code\": 401, \"msg\": \"令牌无效或已过期\"}");
                 return false;
             }
 
-            // ========== 步骤3：解析Token获取用户信息 ==========
-            // JWT Payload包含：userId、username、expiration（过期时间）
+            if (tokenBlacklistService == null) {
+                WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(getServletContext());
+                if (context != null) {
+                    tokenBlacklistService = context.getBean(TokenBlacklistService.class);
+                }
+            }
+
+            if (tokenBlacklistService != null && tokenBlacklistService.isBlacklisted(token)) {
+                httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                httpResponse.getWriter().write("{\"code\": 401, \"msg\": \"令牌已失效\"}");
+                return false;
+            }
+
             Claims claims = JwtUtils.parseToken(token);
             Long userId = claims.get("userId", Long.class);
             String username = claims.get("username", String.class);
 
-            // ========== 步骤4：查询数据库获取完整用户信息 ==========
-            // 面试考点：为什么要查数据库？Token里已经有userId和username了
-            // 答：需要获取用户最新状态、角色、权限，Token创建时可能已过期
-            //    例如：用户被禁用、角色被修改、权限被撤销
             if (userService == null) {
-                // 兜底：手动从application context获取userService
                 WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(getServletContext());
                 if (context != null) {
                     userService = context.getBean(UserService.class);
@@ -210,62 +212,45 @@ public class JwtFilter extends AccessControlFilter {
                 return false;
             }
 
-            // ========== 步骤5：手动绑定用户身份到Subject ==========
-            // 面试考点：为什么手动绑定？Shiro默认通过Session绑定
-            // 答：JWT无状态，不使用Session，需要手动创建Subject并绑定到当前线程
             Subject subject = getSubject(request, response);
             if (subject.isAuthenticated()) {
-                // 如果已经认证，检查是否是同一个用户
-                // 防止Token被篡改，冒充其他用户
                 User currentUser = (User) subject.getPrincipal();
                 if (!currentUser.getId().equals(user.getId())) {
-                    subject.logout(); // 登出旧用户
-                    bindSubject(user, request, response); // 绑定新用户
+                    subject.logout();
+                    bindSubject(user, request, response);
                 }
             } else {
-                // 创建新的已认证Subject
                 bindSubject(user, request, response);
             }
 
-            return true; // 认证成功，放行请求
+            Date expiration = claims.getExpiration();
+            long remainingTime = expiration.getTime() - System.currentTimeMillis();
+            if (remainingTime < RENEW_THRESHOLD && remainingTime > 0) {
+                String newToken = JwtUtils.generateToken(userId, username);
+                httpResponse.setHeader("X-New-Token", newToken);
+            }
+
+            return true;
 
         } catch (AuthenticationException e) {
-            // 处理Shiro认证异常
             httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             httpResponse.getWriter().write("{\"code\": 401, \"msg\": \"认证失败\"}");
             return false;
         } catch (Exception e) {
-            // 处理其他异常（如Token解析失败）
             httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             httpResponse.getWriter().write("{\"code\": 401, \"msg\": \"令牌验证失败\"}");
             return false;
         }
     }
 
-    // 【认证-01-辅助方法】绑定Subject到当前线程
-    // 面试考点：为什么绑定到ThreadContext？
-    // 答：Shiro通过ThreadContext.bind绑定Subject到当前线程（ThreadLocal），
-    //    后续代码可以通过SecurityUtils.getSubject()获取当前用户
     private void bindSubject(User user, ServletRequest request, ServletResponse response) {
         Subject.Builder builder = new Subject.Builder();
-        
-        // 创建PrincipalCollection（用户身份集合）
-        // 面试考点：什么是Principal？
-        // 答：Principal是用户的身份标识，可以是用户名、用户对象等
         org.apache.shiro.subject.PrincipalCollection principals =
                 new org.apache.shiro.subject.SimplePrincipalCollection(user, getName());
-        builder.principals(principals); // 设置用户身份
-        builder.authenticated(true);    // 标记为已认证
-        
-        Subject subject = builder.buildSubject(); // 构建Subject
-
-        // 将Subject绑定到当前线程（ThreadLocal）
-        // 面试考点：ThreadLocal的作用？
-        // 答：ThreadLocal为每个线程提供独立的变量副本，
-        //    避免多线程竞争，保证线程安全
+        builder.principals(principals);
+        builder.authenticated(true);
+        Subject subject = builder.buildSubject();
         ThreadContext.bind(subject);
-
-        // 将Subject绑定到request属性（可选）
         request.setAttribute(DefaultSubjectContext.class.getName(), subject);
     }
 }

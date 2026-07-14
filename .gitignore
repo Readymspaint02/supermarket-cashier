@@ -1,0 +1,30 @@
+# 敏感配置文件
+.env.secrets
+*.env.secrets
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# 编译产物
+target/
+dist/
+node_modules/
+__pycache__/
+*.pyc
+*.class
+*.jar
+
+# 日志
+*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 临时文件
+*.tmp
+*.temp
+*.swp
+*~

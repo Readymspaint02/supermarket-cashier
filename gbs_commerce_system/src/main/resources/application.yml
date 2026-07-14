@@ -2,13 +2,14 @@ server:
   port: 8081
   servlet:
     context-path: /api
-# 自定义属性（可选）
+
 app:
-  upload-dir: ${APP_UPLOAD_DIR:/data/uploads/}  # 默认为容器中的挂载目录，可通过 APP_UPLOAD_DIR 覆盖
+  upload-dir: ${APP_UPLOAD_DIR:D:/uploads}
+
 spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://mysql:3306/gbs_commerce_system_02?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=GMT%2B8}
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/gbs_commerce_system_02?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=GMT%2B8}
     username: ${SPRING_DATASOURCE_USERNAME:root}
     password: ${SPRING_DATASOURCE_PASSWORD:123456}
 
@@ -16,7 +17,36 @@ spring:
     date-format: yyyy-MM-dd
     time-zone: GMT+8
 
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 10000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-wait: -1ms
+          max-idle: 8
+          min-idle: 0
 
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: /
+    listener:
+      simple:
+        acknowledge-mode: auto
+        prefetch: 1
+        retry:
+          enabled: true
+          initial-interval: 1000ms
+          max-attempts: 3
+          max-interval: 10000ms
+          multiplier: 2
 
 mybatis-plus:
   mapper-locations: classpath:mapper/*.xml
@@ -24,14 +54,14 @@ mybatis-plus:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
 
-
-
-
 shiro:
   loginUrl: /auth/login
   unauthorizedUrl: /unauthorized
 
-# Baidu AI Face configuration
+jwt:
+  secret: ${JWT_SECRET:mySecretKeyForJWTWhichShouldBeLongerAndMoreSecure123456}
+  expiration: ${JWT_EXPIRATION:86400000}
+
 baidu:
   ai:
     app-id: ${BAIDU_AI_APP_ID:}
@@ -39,6 +69,12 @@ baidu:
     secret-key: ${BAIDU_AI_SECRET_KEY:}
     group-id: ${BAIDU_AI_GROUP_ID:}
 
+huawei:
+  asr:
+    ak: ${HUAWEI_ASR_AK:HPUAP3REOJYJDOHFTWZK}
+    sk: ${HUAWEI_ASR_SK:clzb7vTMbXm5LbZBzMfAG6ZajpECDxFrEtQSHHHg}
+    region: ${HUAWEI_ASR_REGION:cn-north-4}
+    project-id: ${HUAWEI_ASR_PROJECT_ID:8cd8fd8f6f824a4d824e64750497f00f}
 
 springdoc:
   swagger-ui:
@@ -47,3 +83,18 @@ springdoc:
     enabled: true
   cache:
     disabled: true
+
+redisson:
+  config: |
+    singleServerConfig:
+      address: "redis://${REDIS_HOST:localhost}:${REDIS_PORT:6379}"
+      password: "${REDIS_PASSWORD:}"
+      database: 0
+      connectionPoolSize: 10
+      connectionMinimumIdleSize: 5
+      idleConnectionTimeout: 10000
+      connectTimeout: 10000
+      timeout: 3000
+      retryAttempts: 3
+      retryInterval: 1500
+      lockWatchdogTimeout: 30000

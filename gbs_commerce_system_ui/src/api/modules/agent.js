@@ -19,7 +19,7 @@ const normalizeToHttps = (value) => {
     return '';
   }
   if (/^https?:\/\//i.test(trimmed)) {
-    return trimmed.replace(/^http:\/\//i, 'https://');
+    return trimmed;
   }
   if (/^\/\//.test(trimmed)) {
     return `https:${trimmed}`;
@@ -58,6 +58,29 @@ const agentHttp = axios.create({
 const ttsHttp = axios.create({
   baseURL: defaultTtsBase,
   timeout: 20000,
+});
+
+const getAuthToken = () => {
+  if (typeof window !== 'undefined') {
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        return user?.token || null;
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+};
+
+agentHttp.interceptors.request.use((config) => {
+  const token = getAuthToken();
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
 
 export const sendAgentQuery = (message) => {

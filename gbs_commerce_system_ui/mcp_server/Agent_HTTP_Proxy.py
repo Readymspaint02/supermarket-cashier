@@ -1,218 +1,282 @@
 import os
-import time
-from typing import Dict, Any, Optional
+import json
+import httpx
+from typing import Any, Dict, List, Optional
+from datetime import datetime
 
-import requests
-from fastapi import FastAPI
+from dotenv import load_dotenv
+load_dotenv()
+
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
+import jwt as pyjwt
+
+from repositories import MemberRepository, OrderRepository, AnalyticsRepository
 
 
 class AgentQuery(BaseModel):
     query: str
 
 
-app = FastAPI(title="Huawei Agent HTTP Proxy")
+app = FastAPI(title="DeepSeek Agent Proxy")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 调试阶段放开，正式可按需收紧
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Agent URL 从环境变量读取，避免写死在前端
-AGENT_URL = os.getenv("HUAWEI_AGENT_URL", "")
-
-# ===== IAM Token 简单内存缓存 =====
-_IAM_TOKEN: Optional[str] = None
-_IAM_TOKEN_EXPIRE_TS: float = 0.0  # UNIX 时间戳，过期后需重新获取
+JWT_SECRET = os.getenv("JWT_SECRET", "mySecretKeyForJWTWhichShouldBeLongerAndMoreSecure123456")
+security = HTTPBearer(auto_error=False)
 
 
-def _set_token_cache(token: str, ttl_seconds: int = 600) -> None:
-    """设置内存中的 Token 缓存。
-
-    为简化实现，这里默认缓存 10 分钟；如需更精细控制，可根据实际返回设置。
-    """
-
-    global _IAM_TOKEN, _IAM_TOKEN_EXPIRE_TS
-    _IAM_TOKEN = token
-    _IAM_TOKEN_EXPIRE_TS = time.time() + ttl_seconds
-
-
-def get_iam_token() -> str:
-    """通过用户名密码向 IAM 获取 X-Auth-Token。
-
-    逻辑参考 test07_huawei_token.py，敏感信息从环境变量中读取：
-    - HUAWEI_USERNAME
-    - HUAWEI_PASSWORD
-    - HUAWEI_DOMAIN_NAME
-    - HUAWEI_PROJECT_NAME (如 cn-north-4)
-    """
-    global _IAM_TOKEN, _IAM_TOKEN_EXPIRE_TS
-
-    # 如果缓存中已有且未过期，直接复用
-    now = time.time()
-    if _IAM_TOKEN and now < _IAM_TOKEN_EXPIRE_TS:
-        return _IAM_TOKEN
-
-    username = os.getenv("HUAWEI_USERNAME", "")
-    password = os.getenv("HUAWEI_PASSWORD", "")
-    domain_name = os.getenv("HUAWEI_DOMAIN_NAME", "")
-    project_name = os.getenv("HUAWEI_PROJECT_NAME", "cn-north-4")
-
-    if not all([username, password, domain_name]):
-        raise RuntimeError(
-            "缺少 HUAWEI_USERNAME / HUAWEI_PASSWORD / HUAWEI_DOMAIN_NAME 环境变量，无法获取 IAM Token"
+def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict[str, Any]:
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="未提供认证令牌"
+        )
+    
+    token = credentials.credentials
+    
+    try:
+        payload = pyjwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        return payload
+    except pyjwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="令牌已过期"
+        )
+    except pyjwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的令牌"
         )
 
-    url = "https://iam.cn-north-4.myhuaweicloud.com/v3/auth/tokens"
-    payload = {
-        "auth": {
-            "identity": {
-                "methods": ["password"],
-                "password": {
-                    "user": {
-                        "name": username,
-                        "password": password,
-                        "domain": {"name": domain_name},
-                    }
+
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+if not DEEPSEEK_API_KEY:
+    raise ValueError("DEEPSEEK_API_KEY environment variable is required. Please set it in .env.secrets file.")
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+
+member_repo = MemberRepository()
+order_repo = OrderRepository()
+analytics_repo = AnalyticsRepository()
+
+TOOLS: List[Dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "member_get_profile",
+            "description": "根据会员ID查询会员资料，包括积分、等级、余额等信息",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "member_id": {"type": "string", "description": "会员ID"}
                 },
-            },
-            "scope": {"project": {"name": project_name}},
+                "required": ["member_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "member_search",
+            "description": "模糊搜索会员，关键字可以是会员编号、姓名或手机号",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "keyword": {"type": "string", "description": "搜索关键字"},
+                    "limit": {"type": "integer", "description": "返回条数，默认10"}
+                },
+                "required": ["keyword"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "order_get_detail",
+            "description": "查询订单详情，包括商品明细、金额、支付方式等",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_no": {"type": "string", "description": "订单号"}
+                },
+                "required": ["order_no"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "order_recent",
+            "description": "查询最近订单列表",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "description": "返回条数，默认10"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "assistant_insight",
+            "description": "获取经营分析数据，如销售趋势、热销商品、会员分布",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "metric": {"type": "string", "description": "指标类型：sales_trend、top_products、member_segments"},
+                    "days": {"type": "integer", "description": "统计天数，默认7"}
+                },
+                "required": ["metric"]
+            }
         }
     }
-    headers = {"Content-Type": "application/json"}
-
-    resp = requests.post(url, json=payload, headers=headers, timeout=30, verify=True)
-    if resp.status_code not in (200, 201):
-        raise RuntimeError(f"获取 IAM Token 失败，状态码 {resp.status_code}，响应: {resp.text}")
-
-    token = resp.headers.get("X-Subject-Token")
-    if not token:
-        raise RuntimeError("响应中没有 X-Subject-Token 头，无法获取 Token")
-
-    # 简单缓存 Token，一般有效期远大于 10 分钟，这里保守缓存 10 分钟
-    _set_token_cache(token, ttl_seconds=600)
-    return token
+]
 
 
-def parse_sse_summary(raw_text: str) -> Dict[str, Any]:
-    """解析 SSE 文本，提取中文回复及统计耗时。
+def execute_tool(tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+    if tool_name == "member_get_profile":
+        member_id = arguments.get("member_id", "")
+        profile = member_repo.get_member(member_id)
+        if not profile:
+            return {"status": "not_found", "message": "会员不存在", "member_id": member_id}
+        return {"status": "success", "data": profile}
 
-    优先使用 event=summary_response 的 content；
-    如无 summary_response，则将所有 event=message 的 content 依次拼接。
+    elif tool_name == "member_search":
+        keyword = arguments.get("keyword", "")
+        limit = arguments.get("limit", 10)
+        members = member_repo.search_members(keyword, limit)
+        return {"status": "success", "data": members}
 
-    同时尝试从 event=statistic_data 中提取 latency.overall 作为总耗时。
+    elif tool_name == "order_get_detail":
+        order_no = arguments.get("order_no", "")
+        bundle = order_repo.get_order_with_items(order_no)
+        if not bundle:
+            return {"status": "not_found", "message": "订单不存在", "order_no": order_no}
+        summary = order_repo.summarize_order(bundle)
+        return {"status": "success", "data": summary}
 
-    返回:
-    - {"summary": "...", "events": [...], "latency_overall": float|None}。
-    """
-    summary_from_event = ""
-    messages: list[str] = []
-    events: list[Dict[str, Any]] = []
-    latency_overall: Optional[float] = None
-    if not raw_text:
-        return {"summary": "", "events": events}
+    elif tool_name == "order_recent":
+        limit = arguments.get("limit", 10)
+        orders = order_repo.list_recent_orders(limit)
+        return {"status": "success", "data": orders}
 
-    for line in raw_text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        # 既兼容以 data: 开头的 SSE 行，也兼容纯 JSON 行
-        if line.startswith("data:"):
-            payload = line[len("data:") :].strip()
+    elif tool_name == "assistant_insight":
+        metric = arguments.get("metric", "sales_trend")
+        days = arguments.get("days", 7)
+        if metric == "sales_trend":
+            data = analytics_repo.get_sales_trend(days)
+        elif metric == "top_products":
+            data = analytics_repo.get_top_products(days)
+        elif metric == "member_segments":
+            data = analytics_repo.get_member_segments()
         else:
-            payload = line
-        # 先尝试按 JSON 解析
-        try:
-            obj = requests.utils.json.loads(payload)
-            events.append(obj)
-            ev = obj.get("event")
-            content = obj.get("content", "")
-            if ev == "summary_response" and content:
-                summary_from_event = content
-            elif ev == "message" and content:
-                messages.append(content)
-            elif ev == "statistic_data":
-                try:
-                    latency = obj.get("latency") or {}
-                    overall = latency.get("overall")
-                    if overall is not None:
-                        latency_overall = float(overall)
-                except Exception:
-                    pass
-            continue
-        except Exception:
-            # 不是 JSON，就当作纯文本 content
-            if payload:
-                events.append({"raw": payload})
-                messages.append(payload)
-            continue
+            return {"status": "error", "message": f"未知指标: {metric}"}
+        return {"status": "success", "metric": metric, "data": data}
 
-    if summary_from_event:
-        summary = summary_from_event
     else:
-        summary = "".join(messages)
+        return {"status": "error", "message": f"未知工具: {tool_name}"}
 
-    return {"summary": summary, "events": events, "latency_overall": latency_overall}
+
+async def call_deepseek(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if not DEEPSEEK_API_KEY:
+        return {"error": "未配置 DEEPSEEK_API_KEY"}
+
+    url = f"{DEEPSEEK_BASE_URL}/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": DEEPSEEK_MODEL,
+        "messages": messages,
+        "tools": TOOLS,
+        "tool_choice": "auto"
+    }
+
+    print(f"[DEBUG] API Key: {DEEPSEEK_API_KEY[:10]}...")
+    print(f"[DEBUG] URL: {url}")
+    
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(url, headers=headers, json=payload)
+        print(f"[DEBUG] Status: {resp.status_code}")
+        print(f"[DEBUG] Response: {resp.text[:500]}")
+        if resp.status_code != 200:
+            return {"error": f"DeepSeek API错误: {resp.status_code}", "detail": resp.text}
+        return resp.json()
+
+
+async def agent_loop(user_query: str) -> str:
+    messages = [
+        {
+            "role": "system",
+            "content": "你是智慧超市的智能助手，可以帮助用户查询会员信息、订单详情、经营分析等。请用中文简洁回答，遇到查询类请求请调用相应的工具函数。回答时不要使用markdown格式，不要加星号、井号等特殊符号，直接用纯文本回答即可。"
+        },
+        {"role": "user", "content": user_query}
+    ]
+
+    max_iterations = 5
+    for _ in range(max_iterations):
+        result = await call_deepseek(messages)
+        if "error" in result:
+            return f"抱歉，AI服务暂时不可用: {result['error']}"
+
+        choice = result.get("choices", [{}])[0]
+        message = choice.get("message", {})
+        finish_reason = choice.get("finish_reason", "")
+
+        if finish_reason == "stop" and message.get("content"):
+            return message["content"]
+
+        if finish_reason == "tool_calls" and message.get("tool_calls"):
+            messages.append(message)
+            for tool_call in message["tool_calls"]:
+                tool_name = tool_call["function"]["name"]
+                arguments = json.loads(tool_call["function"]["arguments"])
+                tool_result = execute_tool(tool_name, arguments)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call["id"],
+                    "content": json.dumps(tool_result, ensure_ascii=False)
+                })
+            continue
+
+        if message.get("content"):
+            return message["content"]
+
+        return "抱歉，我无法处理这个请求。"
+
+    return "抱歉，处理超时，请简化您的请求。"
 
 
 @app.post("/agent_query")
-async def agent_query(req: AgentQuery) -> Dict[str, Any]:
-    """前端调用的代理接口：将 query 转发给华为智能体。
-
-    请求体：{"query": "..."}
-    返回：转发智能体返回的 JSON；如出错返回 {status: "error", message: "..."}
-    """
-    if not AGENT_URL:
-        return {"status": "error", "message": "后端未配置 HUAWEI_AGENT_URL 环境变量"}
-
+async def agent_query(req: AgentQuery, user: Dict[str, Any] = Depends(verify_token)) -> Dict[str, Any]:
     try:
-        token = get_iam_token()
-    except Exception as e:
-        return {"status": "error", "message": f"获取 IAM Token 失败: {e}"}
-
-    try:
-        # 这里禁用证书校验以解决 IP 证书不匹配问题，仅限本赛题 Demo 环境
-        resp = requests.post(
-            AGENT_URL,
-            headers={
-                "Content-Type": "application/json",
-                "X-Auth-Token": token,
-            },
-            # 新版 Agent API 要求请求体为 {"inputs": {"query": "..."}}
-            json={
-                "inputs": {
-                    "query": req.query,
-                }
-            },
-            verify=False,
-            timeout=30,
-        )
-
-        # 无论 Content-Type 为何，统一按 UTF-8 解析并从中提取中文 summary
-        try:
-            text = resp.content.decode("utf-8", errors="ignore")
-        except Exception:
-            text = resp.text
-
-        parsed = parse_sse_summary(text)
-        data: Dict[str, Any] = {
-            "summary": parsed.get("summary", ""),
-            "raw_text": text,
-            "latency_overall": parsed.get("latency_overall"),
+        summary = await agent_loop(req.query)
+        return {
+            "status": "success",
+            "data": {
+                "summary": summary,
+                "raw_text": summary
+            }
         }
-
-        return {"status": "success", "http_status": resp.status_code, "data": data}
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 
 @app.get("/health")
 async def health() -> Dict[str, str]:
-    return {"status": "ok"}
+    return {"status": "ok", "model": DEEPSEEK_MODEL}
 
 
 if __name__ == "__main__":
@@ -220,5 +284,6 @@ if __name__ == "__main__":
 
     host = "0.0.0.0"
     port = int(os.getenv("AGENT_PROXY_PORT", "9000"))
-    print(f"Agent HTTP Proxy 启动在 http://{host}:{port}")
+    print(f"DeepSeek Agent Proxy 启动在 http://{host}:{port}")
+    print(f"模型: {DEEPSEEK_MODEL}")
     uvicorn.run(app, host=host, port=port)
