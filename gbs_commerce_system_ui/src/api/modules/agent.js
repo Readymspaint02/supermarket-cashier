@@ -62,14 +62,9 @@ const ttsHttp = axios.create({
 
 const getAuthToken = () => {
   if (typeof window !== 'undefined') {
-    const userStr = localStorage.getItem('user');
-    if (userStr) {
-      try {
-        const user = JSON.parse(userStr);
-        return user?.token || null;
-      } catch {
-        return null;
-      }
+    const token = localStorage.getItem('token');
+    if (token) {
+      return token;
     }
   }
   return null;
