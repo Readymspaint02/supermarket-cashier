@@ -178,8 +178,24 @@
         </template>
       </el-result>
       <template #footer>
-        <el-button type="primary" @click="handlePrint">打印小票</el-button>
+        <el-button type="primary" @click="openReceiptDialog">电子小票</el-button>
         <el-button @click="handleContinue">继续收银</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      title="电子小票"
+      v-model="receiptDialogVisible"
+      width="360px"
+      :close-on-click-modal="true"
+    >
+      <Receipt ref="receiptComponentRef" :order="currentOrder" :showQRCode="true" />
+      <template #footer>
+        <el-button @click="downloadReceipt" :loading="receiptDownloading" type="primary">
+          <el-icon><Download /></el-icon>
+          下载图片
+        </el-button>
+        <el-button @click="receiptDialogVisible = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -238,11 +254,13 @@
 <script setup>
 import { ref, computed, onMounted, nextTick, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, CreditCard, Camera, Loading } from '@element-plus/icons-vue'
+import { Search, CreditCard, Camera, Loading, Download } from '@element-plus/icons-vue'
+import html2canvas from 'html2canvas'
 import { getProductByBarcode, getProductByCode } from '@/api/modules/product'
 import { getInventoryByProductId } from '@/api/modules/inventory'
 import { checkout } from '@/api/modules/order'
 import BarcodeScanner from '@/components/BarcodeScanner.vue'
+import Receipt from '@/components/Receipt.vue'
 import http from '@/api/request'
 
 const barcodeInput = ref('')
@@ -267,6 +285,10 @@ const facePayDetecting = ref(false)
 const facePayStatus = ref(null)
 let facePayTimer = null
 let isFacePayProcessing = false
+
+const receiptDialogVisible = ref(false)
+const receiptComponentRef = ref(null)
+const receiptDownloading = ref(false)
 
 const totalQuantity = computed(() =>
   cart.value.reduce((sum, item) => sum + item.quantity, 0)
@@ -493,6 +515,42 @@ const handleContinue = () => {
 const getPaymentMethodName = (val) => {
   const map = { 1: '现金', 2: '微信', 3: '支付宝', 4: '银行卡', 5: '刷脸支付' }
   return map[val] || '-'
+}
+
+const openReceiptDialog = () => {
+  receiptDialogVisible.value = true
+}
+
+const downloadReceipt = async () => {
+  if (!receiptComponentRef.value) return
+  
+  receiptDownloading.value = true
+  try {
+    const receiptEl = receiptComponentRef.value.$el?.querySelector('.receipt-container') || 
+                      receiptComponentRef.value.$el
+    if (!receiptEl) {
+      ElMessage.error('小票内容获取失败')
+      return
+    }
+    
+    const canvas = await html2canvas(receiptEl, {
+      backgroundColor: '#ffffff',
+      scale: 2,
+      useCORS: true
+    })
+    
+    const link = document.createElement('a')
+    link.download = `小票_${currentOrder.value?.orderNo || Date.now()}.png`
+    link.href = canvas.toDataURL('image/png')
+    link.click()
+    
+    ElMessage.success('小票下载成功')
+  } catch (error) {
+    console.error('下载小票失败', error)
+    ElMessage.error('下载小票失败')
+  } finally {
+    receiptDownloading.value = false
+  }
 }
 
 const openFacePayDialog = async () => {
