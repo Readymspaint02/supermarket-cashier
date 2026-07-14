@@ -2,6 +2,7 @@ package com.zmj.gbs_commerce_system.controller;
 
 import com.zmj.gbs_commerce_system.annotation.RateLimit;
 import com.zmj.gbs_commerce_system.entity.User;
+import com.zmj.gbs_commerce_system.metrics.BusinessMetrics;
 import com.zmj.gbs_commerce_system.service.FaceAuthService;
 import com.zmj.gbs_commerce_system.service.TokenBlacklistService;
 import com.zmj.gbs_commerce_system.service.UserService;
@@ -46,6 +47,9 @@ public class AuthController {
     @Autowired
     private TokenBlacklistService tokenBlacklistService;
 
+    @Autowired
+    private BusinessMetrics businessMetrics;
+
     @PostMapping("/login")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "登录成功"),
@@ -65,12 +69,15 @@ public class AuthController {
             User user = (User) subject.getPrincipal();
             String jwtToken = JwtUtils.generateToken(user.getId(), user.getUsername());
 
+            businessMetrics.incrementLoginSuccess();
+
             Map<String, Object> result = new HashMap<>();
             result.put("code", 200);
             result.put("msg", "登录成功");
             result.put("data", new AuthResponse(jwtToken, user));
             return result;
         } catch (AuthenticationException e) {
+            businessMetrics.incrementLoginFail();
             Map<String, Object> result = new HashMap<>();
             result.put("code", 500);
             result.put("msg", "用户名或密码错误");
@@ -115,6 +122,7 @@ public class AuthController {
 
         Optional<String> matchedUsername = faceAuthService.matchAndGetUsername(request.getImage());
         if (matchedUsername.isEmpty()) {
+            businessMetrics.incrementFaceLoginFail();
             result.put("code", 500);
             result.put("msg", "未匹配到注册用户或识别失败");
             return result;
@@ -122,11 +130,13 @@ public class AuthController {
 
         User user = userService.findByUsername(matchedUsername.get());
         if (user == null || (user.getStatus() != null && user.getStatus() == 1)) {
+            businessMetrics.incrementFaceLoginFail();
             result.put("code", 500);
             result.put("msg", "用户不存在或已被禁用");
             return result;
         }
 
+        businessMetrics.incrementFaceLoginSuccess();
         String jwtToken = JwtUtils.generateToken(user.getId(), user.getUsername());
         result.put("code", 200);
         result.put("msg", "人脸登录成功");

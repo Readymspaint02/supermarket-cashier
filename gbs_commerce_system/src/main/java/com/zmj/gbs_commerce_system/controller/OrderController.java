@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zmj.gbs_commerce_system.entity.OrderItem;
 import com.zmj.gbs_commerce_system.entity.Orders;
+import com.zmj.gbs_commerce_system.metrics.BusinessMetrics;
 import com.zmj.gbs_commerce_system.service.OrderService;
 import com.zmj.gbs_commerce_system.utils.PageParams;
 import io.swagger.v3.oas.annotations.Operation;
@@ -35,6 +36,9 @@ public class OrderController {
     
     @Autowired
     private OrderService orderService;
+
+    @Autowired
+    private BusinessMetrics businessMetrics;
     
     /**
      * 分页查询订单列表
@@ -195,11 +199,15 @@ public class OrderController {
     public Map<String, Object> checkout(@RequestBody Map<String, Object> orderData) {
         Map<String, Object> result = new HashMap<>();
         try {
+            businessMetrics.incrementOrderCreate();
             Orders order = orderService.createOrder(orderData);
+            businessMetrics.incrementOrderSuccess();
+            businessMetrics.addOrderAmount(order.getTotalAmount() != null ? order.getTotalAmount().doubleValue() : 0);
             result.put("code", 200);
             result.put("msg", "结账成功");
             result.put("data", order);
         } catch (RuntimeException e) {
+            businessMetrics.incrementOrderFail();
             result.put("code", 500);
             result.put("msg", "结账失败：" + e.getMessage());
         }
