@@ -76,12 +76,9 @@
       <div class="receipt-footer">
         <div class="thank-you">感谢您的光临，欢迎再次惠顾！</div>
         <div class="qrcode-hint">扫码查看电子小票</div>
-        <div class="qrcode-placeholder" v-if="showQRCode">
+        <div class="qrcode-placeholder" v-if="showQRCode && receiptUrl">
           <div class="qrcode-box">
-            <svg viewBox="0 0 100 100" class="qrcode-svg">
-              <rect x="0" y="0" width="100" height="100" fill="#fff"/>
-              <text x="50" y="55" text-anchor="middle" font-size="12" fill="#333">小票二维码</text>
-            </svg>
+            <qrcode-vue :value="receiptUrl" :size="78" level="M" />
           </div>
         </div>
       </div>
@@ -95,6 +92,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import QrcodeVue from 'qrcode.vue'
 
 const props = defineProps({
   order: {
@@ -105,6 +103,11 @@ const props = defineProps({
     type: Boolean,
     default: true
   }
+})
+
+const receiptUrl = computed(() => {
+  if (!props.order?.orderNo) return ''
+  return `${window.location.origin}/receipt/${props.order.orderNo}`
 })
 
 const totalQuantity = computed(() => {

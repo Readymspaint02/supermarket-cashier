@@ -11,6 +11,14 @@ export const staticRouter = [
     component: () => import('@/views/login/index.vue'),
   },
   {
+    path: '/receipt/:orderNo',
+    name: 'receipt',
+    component: () => import('@/views/receipt/index.vue'),
+    meta: {
+      title: '电子小票',
+    },
+  },
+  {
     path: '/layout',
     name: 'layout',
     component: () => import('@/components/Layout.vue'),

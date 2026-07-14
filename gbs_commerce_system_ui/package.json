@@ -9,14 +9,15 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@chenfengyuan/vue-barcode": "^2.0.2",
     "@element-plus/icons-vue": "^2.3.2",
     "@tailwindcss/vite": "^4.1.13",
-    "axios": "^1.12.2",
-    "@chenfengyuan/vue-barcode": "^2.0.2",
     "@zxing/library": "^0.20.0",
+    "axios": "^1.12.2",
     "echarts": "^6.0.0",
     "element-plus": "^2.11.3",
     "html2canvas": "^1.4.1",
+    "qrcode.vue": "^3.10.0",
     "tailwindcss": "^4.1.13",
     "vue": "^3.5.21",
     "vue-router": "^4.5.1"
