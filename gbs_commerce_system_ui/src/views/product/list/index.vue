@@ -136,25 +136,32 @@
         label-width="100px"
       >
         <el-row :gutter="20">
-          <el-col :span="12">
-            <el-form-item label="商品名称" prop="productName">
-              <el-input
-                v-model="formData.productName"
-                placeholder="请输入商品名称"
-                maxlength="100"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="商品编码" prop="productCode">
-              <el-input
-                v-model="formData.productCode"
-                placeholder="请输入商品编码/条形码"
-                maxlength="50"
-              />
-            </el-form-item>
-          </el-col>
-        </el-row>
+           <el-col :span="12">
+             <el-form-item label="商品名称" prop="productName">
+               <el-input
+                 v-model="formData.productName"
+                 placeholder="请输入商品名称"
+                 maxlength="100"
+               />
+             </el-form-item>
+           </el-col>
+           <el-col :span="12">
+             <el-form-item label="商品编码" prop="productCode">
+               <div class="code-input-row">
+                 <el-input
+                   v-model="formData.productCode"
+                   placeholder="请输入商品编码/条形码"
+                   maxlength="50"
+                   style="flex: 1"
+                 />
+                 <el-button @click="openScannerDialog">
+                   <el-icon><Camera /></el-icon>
+                   扫码
+                 </el-button>
+               </div>
+             </el-form-item>
+           </el-col>
+         </el-row>
 
         <el-row :gutter="20">
           <el-col :span="12">
@@ -207,22 +214,34 @@
         </el-row>
 
         <el-form-item label="商品图片" prop="productImage">
-          <el-upload
-            class="avatar-uploader"
-            action="/api/product/uploadImage"
-            :headers="uploadHeaders"
-            :show-file-list="false"
-            :on-success="handleUploadSuccess"
-            :before-upload="beforeUpload"
-          >
-            <img
-              v-if="formData.productImage"
-              :src="formData.productImage"
-              class="avatar"
-            />
-            <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
-          </el-upload>
-          <div class="upload-tip">支持jpg/png格式，大小不超过2MB</div>
+          <div class="image-upload-wrapper">
+            <el-upload
+              class="avatar-uploader"
+              action="/api/product/uploadImage"
+              :headers="uploadHeaders"
+              :show-file-list="false"
+              :on-success="handleUploadSuccess"
+              :before-upload="beforeUpload"
+            >
+              <img
+                v-if="formData.productImage"
+                :src="formData.productImage"
+                class="avatar"
+              />
+              <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
+            </el-upload>
+            <el-button 
+              type="primary" 
+              size="small" 
+              :loading="fetchImageLoading"
+              @click="fetchProductImage"
+              style="margin-top: 10px"
+            >
+              <el-icon><Picture /></el-icon>
+              自动获取图片
+            </el-button>
+          </div>
+          <div class="upload-tip">支持jpg/png格式，大小不超过2MB，或点击按钮自动获取网络图片</div>
         </el-form-item>
 
         <el-form-item label="状态" prop="status">
@@ -260,13 +279,27 @@
         </span>
       </template>
     </el-dialog>
+
+    <el-dialog
+      title="扫码识别"
+      v-model="scannerDialogVisible"
+      width="480px"
+      :close-on-click-modal="false"
+      @close="closeScanner"
+    >
+      <BarcodeScanner
+        v-if="scannerDialogVisible"
+        @detected="handleBarcodeDetected"
+        @close="closeScanner"
+      />
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Plus } from '@element-plus/icons-vue';
+import { Plus, Camera, Picture } from '@element-plus/icons-vue';
 import {
   getProductPage,
   addProduct,
@@ -274,6 +307,7 @@ import {
   deleteProduct
 } from '@/api/modules/product';
 import { getCategoryTree } from '@/api/modules/productCategory';
+import BarcodeScanner from '@/components/BarcodeScanner.vue';
 
 // ==================== 数据定义 ====================
 const loading = ref(false);
@@ -284,6 +318,8 @@ const dialogTitle = ref('');
 const submitLoading = ref(false);
 const formRef = ref(null);
 const token = ref(localStorage.getItem('token') || '');
+const scannerDialogVisible = ref(false);
+const fetchImageLoading = ref(false);
 
 // 上传headers（计算属性，自动响应token变化）
 const uploadHeaders = computed(() => ({
@@ -545,6 +581,59 @@ const resetForm = () => {
   });
   formRef.value?.clearValidate();
 };
+
+const openScannerDialog = () => {
+  scannerDialogVisible.value = true;
+};
+
+const closeScanner = () => {
+  scannerDialogVisible.value = false;
+};
+
+const handleBarcodeDetected = (code) => {
+  if (code && code.trim()) {
+    formData.productCode = code.trim();
+    ElMessage.success(`识别到条码: ${code}`);
+    closeScanner();
+  }
+};
+
+const fetchProductImage = async () => {
+  if (!formData.productName) {
+    ElMessage.warning('请先输入商品名称');
+    return;
+  }
+  
+  fetchImageLoading.value = true;
+  try {
+    const response = await fetch(
+      `https://api.unsplash.com/photos/random?query=${encodeURIComponent(formData.productName)}&orientation=squarish`,
+      {
+        headers: {
+          'Authorization': 'Client-ID YOUR_UNSPLASH_ACCESS_KEY'
+        }
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error('API请求失败');
+    }
+    
+    const data = await response.json();
+    
+    if (data && data.urls && data.urls.small) {
+      formData.productImage = data.urls.small;
+      ElMessage.success('图片获取成功');
+    } else {
+      ElMessage.warning('未找到合适的图片，请手动上传');
+    }
+  } catch (error) {
+    console.error('获取图片失败', error);
+    ElMessage.error('自动获取图片失败，请手动上传或配置Unsplash API密钥');
+  } finally {
+    fetchImageLoading.value = false;
+  }
+};
 </script>
 
 <style scoped>
@@ -606,6 +695,17 @@ const resetForm = () => {
   font-size: 12px;
   color: #999;
   margin-top: 8px;
+}
+
+.code-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.image-upload-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 </style>
 

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zmj.gbs_commerce_system.entity.Member;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -22,4 +23,8 @@ public interface MemberService {
     boolean updateMember(Member member);
 
     boolean deleteMember(Long id);
+
+    boolean deductBalance(String memberId, BigDecimal amount);
+
+    boolean addBalance(String memberId, BigDecimal amount);
 }

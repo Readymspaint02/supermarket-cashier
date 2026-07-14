@@ -353,7 +353,6 @@ public class OrderServiceImpl implements OrderService {
     //     通过RabbitMQ异步解耦，支付响应时间从2秒降到200ms。
     private void sendOrderPaidMessage(Orders order) {
         try {
-            // 构建消息对象
             OrderPaidMessage message = OrderPaidMessage.of(
                     order.getId(),
                     order.getOrderNo(),
@@ -361,11 +360,10 @@ public class OrderServiceImpl implements OrderService {
                     order.getTotalAmount(),
                     order.getPaidAmount(),
                     order.getCashierId(),
-                    order.getCashierName()
+                    order.getCashierName(),
+                    order.getPaymentMethod()
             );
 
-            // 发送消息到RabbitMQ
-            // 参数：交换机名称、路由键、消息内容
             rabbitTemplate.convertAndSend(
                     RabbitMQConfig.ORDER_EXCHANGE,
                     RabbitMQConfig.ORDER_PAID_ROUTING_KEY,

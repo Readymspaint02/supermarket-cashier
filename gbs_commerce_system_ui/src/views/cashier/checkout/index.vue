@@ -130,7 +130,23 @@
                 <el-radio :value="3" border>支付宝</el-radio>
                 <el-radio :value="4" border>银行卡</el-radio>
                 <el-radio :value="5" border>刷脸支付</el-radio>
+                <el-radio :value="6" border :disabled="!memberInfo">余额支付</el-radio>
               </el-radio-group>
+              <div v-if="memberInfo" class="member-info">
+                <span>会员：{{ memberInfo.name }}</span>
+                <span style="margin-left: 20px">余额：¥{{ memberInfo.balance?.toFixed(2) || '0.00' }}</span>
+                <span style="margin-left: 20px">积分：{{ memberInfo.points || 0 }}</span>
+              </div>
+              <div class="member-input-row">
+                <el-input
+                  v-model="memberIdInput"
+                  placeholder="输入会员编号后按回车查询"
+                  style="width: 200px"
+                  @keyup.enter="queryMember"
+                />
+                <el-button size="small" @click="queryMember">查询会员</el-button>
+                <el-button size="small" type="danger" v-if="memberInfo" @click="clearMember">清除会员</el-button>
+              </div>
             </div>
 
             <el-input
@@ -289,6 +305,9 @@ let isFacePayProcessing = false
 const receiptDialogVisible = ref(false)
 const receiptComponentRef = ref(null)
 const receiptDownloading = ref(false)
+
+const memberInfo = ref(null)
+const memberIdInput = ref('')
 
 const totalQuantity = computed(() =>
   cart.value.reduce((sum, item) => sum + item.quantity, 0)
@@ -478,6 +497,15 @@ const handleCheckout = () => {
     .then(async () => {
       try {
         checkoutLoading.value = true
+        
+        if (paymentMethod.value === 6 && memberInfo.value) {
+          if ((memberInfo.value.balance || 0) < paidAmount.value) {
+            ElMessage.error('会员余额不足')
+            checkoutLoading.value = false
+            return
+          }
+        }
+        
         const orderData = {
           cartItems: cart.value.map((item) => ({
             productId: item.productId,
@@ -488,6 +516,11 @@ const handleCheckout = () => {
           paymentMethod: paymentMethod.value,
           remark: remark.value,
         }
+        
+        if (memberInfo.value) {
+          orderData.memberId = memberInfo.value.memberId
+        }
+        
         const res = await checkout(orderData)
         if (res.code === 200) {
           currentOrder.value = res.data
@@ -495,6 +528,8 @@ const handleCheckout = () => {
           cart.value = []
           discountAmount.value = 0
           remark.value = ''
+          memberInfo.value = null
+          memberIdInput.value = ''
         }
       } finally {
         checkoutLoading.value = false
@@ -513,8 +548,34 @@ const handleContinue = () => {
 }
 
 const getPaymentMethodName = (val) => {
-  const map = { 1: '现金', 2: '微信', 3: '支付宝', 4: '银行卡', 5: '刷脸支付' }
+  const map = { 1: '现金', 2: '微信', 3: '支付宝', 4: '银行卡', 5: '刷脸支付', 6: '余额支付' }
   return map[val] || '-'
+}
+
+const queryMember = async () => {
+  if (!memberIdInput.value || !memberIdInput.value.trim()) {
+    ElMessage.warning('请输入会员编号')
+    return
+  }
+  try {
+    const res = await http.get(`/system/member/byMemberId/${memberIdInput.value.trim()}`)
+    if (res.code === 200 && res.data) {
+      memberInfo.value = res.data
+      ElMessage.success(`会员：${res.data.name}，余额：¥${res.data.balance?.toFixed(2) || '0.00'}`)
+    } else {
+      ElMessage.error('未找到该会员')
+    }
+  } catch (error) {
+    ElMessage.error('查询会员失败')
+  }
+}
+
+const clearMember = () => {
+  memberInfo.value = null
+  memberIdInput.value = ''
+  if (paymentMethod.value === 6) {
+    paymentMethod.value = 1
+  }
 }
 
 const openReceiptDialog = () => {
@@ -809,5 +870,21 @@ onBeforeUnmount(() => {
 
 .face-status {
   margin-top: 8px;
+}
+
+.member-info {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: #e6f7ff;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #1890ff;
+}
+
+.member-input-row {
+  margin-top: 10px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 </style>
