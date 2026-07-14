@@ -125,6 +125,12 @@ public class ShiroConfig {
         filterChainDefinitionMap.put("/auth/register", "anon");   // 注册接口
         filterChainDefinitionMap.put("/logout", "logout");        // 登出接口
 
+        // 人脸识别接口
+        filterChainDefinitionMap.put("/face/config", "anon");     // 配置检查接口
+        filterChainDefinitionMap.put("/face/check", "anon");      // 人脸注册状态检查
+        filterChainDefinitionMap.put("/face/register", "jwt");    // 人脸注册需要登录
+        filterChainDefinitionMap.put("/face/verify", "jwt");      // 人脸验证需要登录
+
         // Swagger接口文档（不需要认证）
         filterChainDefinitionMap.put("/swagger-ui/**", "anon");
         filterChainDefinitionMap.put("/v3/api-docs/**", "anon");

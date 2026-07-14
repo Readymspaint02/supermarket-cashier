@@ -69,7 +69,12 @@
         <el-table-column label="操作" width="260">
           <template #default="{ row }">
             <el-button size="small" @click="openDialog(row)">编辑</el-button>
-            <el-button size="small" type="success" @click="openFaceRegister(row)">
+            <el-button 
+              size="small" 
+              :type="row.faceRegistered === 1 ? 'warning' : 'success'"
+              :style="row.faceRegistered === 1 ? 'background-color: #d0b019; border-color: #d0b019;' : ''"
+              @click="openFaceRegister(row)"
+            >
               {{ row.faceRegistered === 1 ? '人脸更新' : '人脸注册' }}
             </el-button>
             <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
