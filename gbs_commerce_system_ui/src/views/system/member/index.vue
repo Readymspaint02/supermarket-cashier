@@ -65,10 +65,13 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" />
-        <el-table-column label="操作" width="200">
+        <!-- <el-table-column prop="createTime" label="创建时间" /> -->
+        <el-table-column label="操作" width="260">
           <template #default="{ row }">
             <el-button size="small" @click="openDialog(row)">编辑</el-button>
+            <el-button size="small" type="success" @click="openFaceRegister(row)">
+              {{ row.faceRegistered === 1 ? '人脸更新' : '人脸注册' }}
+            </el-button>
             <el-button size="small" type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -157,11 +160,33 @@
         <el-button type="primary" @click="submitMember">确认</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog :title="faceDialogTitle" v-model="faceDialogVisible" width="480px">
+      <div class="face-register-content">
+        <div class="face-info">
+          <p><strong>会员号：</strong>{{ faceRegisterMember.memberId }}</p>
+          <p><strong>姓名：</strong>{{ faceRegisterMember.name }}</p>
+        </div>
+        <div class="face-capture">
+          <video ref="videoRef" autoplay playsinline class="face-video"></video>
+          <canvas ref="canvasRef" style="display: none;"></canvas>
+        </div>
+        <div class="face-preview" v-if="capturedImage">
+          <img :src="capturedImage" alt="人脸预览" class="preview-image" />
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="stopCamera">取消</el-button>
+        <el-button type="primary" @click="captureAndRegister" :loading="faceRegistering">
+          {{ capturedImage ? '确认' : '拍照' }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getMemberPage,
@@ -169,11 +194,21 @@ import {
   updateMember,
   deleteMember
 } from '@/api/modules/member'
+import http from '@/api/request'
 
 const memberList = ref([])
 const loading = ref(false)
 const dialogVisible = ref(false)
 const dialogTitle = ref('新增会员')
+
+const faceDialogVisible = ref(false)
+const faceDialogTitle = ref('人脸注册')
+const faceRegisterMember = ref({})
+const faceRegistering = ref(false)
+const capturedImage = ref('')
+const videoRef = ref(null)
+const canvasRef = ref(null)
+let mediaStream = null
 
 const pagination = reactive({
   currentPage: 1,
@@ -367,6 +402,98 @@ const handleDelete = (row) => {
 onMounted(() => {
   loadMembers()
 })
+
+const openFaceRegister = async (row) => {
+  faceRegisterMember.value = row
+  capturedImage.value = ''
+  faceDialogVisible.value = true
+  
+  try {
+    const res = await http.get('/face/check', { params: { userId: row.memberId } })
+    if (res.code === 200 && res.data?.registered) {
+      faceDialogTitle.value = '人脸更新'
+      row.faceRegistered = 1
+    } else {
+      faceDialogTitle.value = '人脸注册'
+      row.faceRegistered = 0
+    }
+  } catch (error) {
+    faceDialogTitle.value = row.faceRegistered === 1 ? '人脸更新' : '人脸注册'
+    console.error('检查人脸状态失败:', error)
+  }
+  
+  await startCamera()
+}
+
+const startCamera = async () => {
+  try {
+    mediaStream = await navigator.mediaDevices.getUserMedia({ 
+      video: { facingMode: 'user', width: 640, height: 480 } 
+    })
+    if (videoRef.value) {
+      videoRef.value.srcObject = mediaStream
+    }
+  } catch (error) {
+    ElMessage.error('无法访问摄像头，请检查权限设置')
+    console.error(error)
+  }
+}
+
+const stopCamera = () => {
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(track => track.stop())
+    mediaStream = null
+  }
+  if (videoRef.value) {
+    videoRef.value.srcObject = null
+  }
+  capturedImage.value = ''
+  faceDialogVisible.value = false
+}
+
+const captureAndRegister = async () => {
+  if (!capturedImage.value) {
+    const video = videoRef.value
+    const canvas = canvasRef.value
+    if (!video || !canvas) return
+    
+    canvas.width = video.videoWidth || 640
+    canvas.height = video.videoHeight || 480
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+    capturedImage.value = canvas.toDataURL('image/jpeg', 0.8)
+    return
+  }
+  
+  faceRegistering.value = true
+  try {
+    const base64Data = capturedImage.value.split(',')[1]
+    const res = await http.post('/face/register', {
+      userId: faceRegisterMember.value.memberId,
+      image: base64Data,
+      userInfo: faceRegisterMember.value.name
+    })
+    
+    if (res.code === 200) {
+      const msg = faceDialogTitle.value === '人脸更新' ? '人脸更新成功' : '人脸注册成功'
+      ElMessage.success(msg)
+      faceRegisterMember.value.faceRegistered = 1
+      stopCamera()
+    } else {
+      ElMessage.error(res.msg || '人脸注册失败')
+    }
+  } catch (error) {
+    const errMsg = error?.response?.data?.msg || error?.message || '人脸注册失败，请重试'
+    ElMessage.error(errMsg)
+    console.error('人脸注册错误:', error)
+  } finally {
+    faceRegistering.value = false
+  }
+}
+
+onBeforeUnmount(() => {
+  stopCamera()
+})
 </script>
 
 <style scoped>
@@ -401,5 +528,48 @@ onMounted(() => {
 .level-text {
   font-weight: 500;
   color: #303133;
+}
+
+.face-register-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.face-info {
+  width: 100%;
+  padding: 12px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.face-info p {
+  margin: 4px 0;
+}
+
+.face-capture {
+  width: 100%;
+  max-width: 400px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+}
+
+.face-video {
+  width: 100%;
+  height: 300px;
+  object-fit: cover;
+  display: block;
+}
+
+.face-preview {
+  width: 100%;
+  max-width: 400px;
+}
+
+.preview-image {
+  width: 100%;
+  border-radius: 8px;
 }
 </style>

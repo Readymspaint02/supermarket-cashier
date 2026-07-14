@@ -243,6 +243,56 @@ public class FaceAuthServiceImpl implements FaceAuthService {
         }
     }
 
+    @Override
+    public boolean checkFaceRegistered(String userId) {
+        try {
+            if (props.getApiKey() == null || props.getApiKey().isEmpty()) {
+                log.warn("百度AI未配置，默认返回false");
+                return false;
+            }
+            
+            if (props.getGroupId() == null || props.getGroupId().isEmpty()) {
+                log.warn("百度AI用户组未配置");
+                return false;
+            }
+            
+            String accessToken = getAccessToken();
+            if (accessToken == null || accessToken.isEmpty()) {
+                log.warn("获取百度Access Token失败");
+                return false;
+            }
+
+            String url = "https://aip.baidubce.com/rest/2.0/face/v3/faceset/user/get?access_token=" + accessToken;
+            
+            Map<String, Object> body = new HashMap<>();
+            body.put("group_id", props.getGroupId());
+            body.put("user_id", userId);
+            String json = mapper.writeValueAsString(body);
+
+            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                    .timeout(Duration.ofSeconds(10))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(json))
+                    .build();
+            HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+
+            JsonNode root = mapper.readTree(resp.body());
+            log.debug("查询人脸注册状态响应: {}", resp.body());
+            
+            if (root.has("error_code") && root.get("error_code").asInt() == 0) {
+                JsonNode result = root.path("result");
+                JsonNode faceList = result.path("face_list");
+                boolean registered = faceList.isArray() && faceList.size() > 0;
+                log.info("用户{}人脸注册状态: {}", userId, registered ? "已注册" : "未注册");
+                return registered;
+            }
+            return false;
+        } catch (Exception e) {
+            log.error("查询人脸注册状态异常", e);
+            return false;
+        }
+    }
+
     private synchronized String getAccessToken() throws Exception {
         if (cachedAccessToken != null && System.currentTimeMillis() < tokenExpireTime) {
             return cachedAccessToken;

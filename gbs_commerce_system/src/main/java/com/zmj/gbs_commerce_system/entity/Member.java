@@ -24,6 +24,7 @@ public class Member {
     private BigDecimal balance;
     private String address;
     private Integer status;
+    private Integer faceRegistered;
     private String remark;
     private Date createTime;
     private Date updateTime;
