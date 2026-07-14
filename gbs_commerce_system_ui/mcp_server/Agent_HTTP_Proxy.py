@@ -49,7 +49,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)) 
     token = credentials.credentials
     
     try:
-        payload = pyjwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        payload = pyjwt.decode(token, JWT_SECRET, algorithms=["HS256", "HS384", "HS512"])
         return payload
     except pyjwt.ExpiredSignatureError:
         raise HTTPException(
