@@ -1,6 +1,51 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+============================================================
+【配置-01】pom.xml - Maven依赖配置
+============================================================
+
+文件作用：
+定义项目依赖、版本号、构建配置。
+核心依赖：Spring Boot 3、MyBatis-Plus、Shiro、JWT、Redis、RabbitMQ。
+
+面试考点：
+- Q1：Spring Boot 3有什么新特性？
+  A1：- 最低要求Java 17
+      - 从javax迁移到jakarta（如jakarta.servlet）
+      - 支持虚拟线程（Virtual Threads）
+      - 改进的Observability支持
+
+- Q2：为什么Shiro要加classifier="jakarta"？
+  A2：Spring Boot 3使用jakarta命名空间，而Shiro默认使用javax。
+      加classifier="jakarta"引入适配jakarta的Shiro版本，避免冲突。
+
+- Q3：MyBatis-Plus和MyBatis的区别？
+  A3：MyBatis-Plus是MyBatis增强工具：
+      - 内置CRUD接口，无需写XML
+      - 支持分页插件、代码生成器
+      - 支持逻辑删除、自动填充
+
+- Q4：Redis和RabbitMQ的作用？
+  A4：- Redis：缓存、分布式锁、Session共享
+      - RabbitMQ：异步消息队列、业务解耦
+
+- Q5：为什么用JWT而不是Session？
+  A5：JWT无状态，适合前后端分离、分布式部署；
+      Session有状态，需要Session共享或粘性Session。
+
+关键依赖版本：
+- Spring Boot: 3.4.3
+- Java: 17
+- MyBatis-Plus: 3.5.7
+- Shiro: 1.13.0
+- JWT: 0.11.5
+
+参考文档：
+- 梳理项目.md 二、技术栈详解
+============================================================
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/pom-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>org.springframework.boot</groupId>
@@ -61,7 +106,26 @@
             <groupId>org.apache.shiro</groupId>
             <artifactId>shiro-spring</artifactId>
             <classifier>jakarta</classifier>  <!-- 关键：添加 jakarta 分类器 -->
-            <version>1.13.0</version>         <!-- 与你之前的版本保持一致 -->
+            <version>1.13.0</version>
+            <exclusions>
+                <!-- 排除掉默认的（不带分类器的）依赖，避免冲突 -->
+                <exclusion>
+                    <groupId>org.apache.shiro</groupId>
+                    <artifactId>shiro-web</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.shiro</groupId>
+                    <artifactId>shiro-core</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <!-- 显式引入带 jakarta 分类器的核心模块 -->
+        <dependency>
+            <groupId>org.apache.shiro</groupId>
+            <artifactId>shiro-spring</artifactId>
+            <classifier>jakarta</classifier>  <!-- 关键：添加 jakarta 分类器 -->
+            <version>1.13.0</version>
             <exclusions>
                 <!-- 排除掉默认的（不带分类器的）依赖，避免冲突 -->
                 <exclusion>
@@ -132,6 +196,70 @@
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
             <version>${openapi.version}</version>
         </dependency>
+
+        <!-- Redis -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!-- Redisson 分布式锁 -->
+        <dependency>
+            <groupId>org.redisson</groupId>
+            <artifactId>redisson-spring-boot-starter</artifactId>
+            <version>3.27.2</version>
+        </dependency>
+
+        <!-- RabbitMQ -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+
+        <!-- Huawei ASR SDK -->
+        <dependency>
+            <groupId>com.huawei.sis</groupId>
+            <artifactId>huaweicloud-java-sdk-sis</artifactId>
+            <version>1.8.7</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/../huaweicloud-java-sdk-sis-1.8.7/jar/huaweicloud-java-sdk-sis-1.8.7.jar</systemPath>
+        </dependency>
+        <dependency>
+            <groupId>com.huawei</groupId>
+            <artifactId>java-sdk-core</artifactId>
+            <version>3.0.12</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/../huaweicloud-java-sdk-sis-1.8.7/jar/java-sdk-core-3.0.12.jar</systemPath>
+        </dependency>
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp</artifactId>
+            <version>3.14.2</version>
+        </dependency>
+        <dependency>
+            <groupId>com.squareup.okio</groupId>
+            <artifactId>okio</artifactId>
+            <version>1.17.2</version>
+        </dependency>
+        <dependency>
+            <groupId>joda-time</groupId>
+            <artifactId>joda-time</artifactId>
+            <version>2.10.3</version>
+        </dependency>
+
+        <!-- Spring Boot Test -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Mockito -->
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -141,6 +269,7 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
                     <mainClass>com.zmj.gbs_commerce_system.CommerceSystemApplication</mainClass>
+                    <includeSystemScope>true</includeSystemScope>   <!-- 这一行是关键！ -->
                     <excludes>
                         <exclude>
                             <groupId>org.projectlombok</groupId>

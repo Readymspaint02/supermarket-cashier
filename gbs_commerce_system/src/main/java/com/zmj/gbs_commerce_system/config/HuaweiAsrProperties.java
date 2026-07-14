@@ -6,10 +6,10 @@ import org.springframework.context.annotation.Configuration;
 
 @Data
 @Configuration
-@ConfigurationProperties(prefix = "baidu.ai")
-public class BaiduAiProperties {
-    private String appId;
-    private String apiKey;
-    private String secretKey;
-    private String groupId;
+@ConfigurationProperties(prefix = "huawei.asr")
+public class HuaweiAsrProperties {
+    private String ak;
+    private String sk;
+    private String region;
+    private String projectId;
 }

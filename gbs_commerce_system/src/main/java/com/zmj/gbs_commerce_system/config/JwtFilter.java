@@ -1,5 +1,62 @@
 package com.zmj.gbs_commerce_system.config;
 
+/**
+ * ============================================================
+ * 【认证-01】JwtFilter - JWT Token验证过滤器
+ * ============================================================
+ * 
+ * 文件作用：
+ * 自定义Shiro过滤器，拦截HTTP请求并验证JWT Token，
+ * 实现无状态认证（不依赖Session，适合前后端分离架构）。
+ * 
+ * 技术原理：
+ * - 继承Shiro的AccessControlFilter，重写isAccessAllowed和onAccessDenied方法
+ * - 从HTTP请求头获取Token：Authorization: Bearer {token}
+ * - 使用JwtUtils验证Token签名和过期时间
+ * - 解析Token获取用户信息，手动绑定到Shiro的Subject
+ * 
+ * 业务流程：
+ * 1. 前端发起请求，携带JWT Token在请求头
+ * 2. JwtFilter拦截请求，判断是否需要认证
+ * 3. 需要认证的请求，解析Token验证有效性
+ * 4. Token有效，查询数据库获取完整用户信息
+ * 5. 手动绑定用户身份到Subject，完成认证
+ * 6. 放行请求，后续可通过SecurityUtils.getSubject()获取当前用户
+ * 
+ * 面试考点：
+ * - Q1：Shiro默认基于Session，如何改为JWT无状态认证？
+ *   A1：自定义JwtFilter继承AccessControlFilter，在onAccessDenied中
+ *       解析JWT Token，手动创建Subject并绑定到ThreadContext，
+ *       绕过Session机制实现无状态认证。
+ * 
+ * - Q2：为什么要查数据库而不是直接用Token里的用户信息？
+ *   A2：Token创建时用户状态、角色、权限可能已变化（如被禁用），
+ *       需要查询数据库获取最新信息，保证权限控制准确性。
+ * 
+ * - Q3：Token过期怎么处理？
+ *   A3：返回401状态码和错误信息，前端收到后跳转登录页，
+ *       用户重新登录获取新Token。
+ * 
+ * - Q4：如何实现Token自动续期？
+ *   A4：可以在Token快过期时（如剩余有效期<5分钟），
+ *       在响应头返回新Token，前端保存替换旧Token。
+ * 
+ * - Q5：为什么OPTIONS请求要直接放行？
+ *   A5：OPTIONS是CORS预检请求，用于跨域场景，
+ *       浏览器会在实际请求前先发OPTIONS探测服务器是否允许跨域，
+ *       此时请求头还没带Token，必须放行否则跨域失败。
+ * 
+ * 关联文件：
+ * - config/ShiroConfig.java（配置过滤器链，将jwt过滤器注册到Shiro）
+ * - utils/JwtUtils.java（Token生成、解析、验证）
+ * - service/UserService.java（查询用户信息）
+ * 
+ * 参考文档：
+ * - 梳理项目.md 3.1 认证授权模块
+ * - 项目难点讲解.txt 难点一：Shiro + JWT 无状态认证
+ * ============================================================
+ */
+
 import com.zmj.gbs_commerce_system.entity.User;
 import com.zmj.gbs_commerce_system.service.UserService;
 import com.zmj.gbs_commerce_system.utils.JwtUtils;
@@ -20,92 +77,120 @@ import jakarta.servlet.http.HttpServletResponse;
 
 public class JwtFilter extends AccessControlFilter {
 
+    // 【认证-01-依赖注入】UserService - 用于查询用户完整信息
+    // 注意：Filter不在Spring容器管理，无法用@Autowired注入
+    // 解决：在setServletContext中手动从WebApplicationContext获取Bean
     private UserService userService;
 
+    // 【认证-01-初始化】获取Spring容器中的UserService Bean
     @Override
     public void setServletContext(ServletContext servletContext) {
         super.setServletContext(servletContext);
-        // 从ServletContext获取WebApplicationContext，然后获取UserService bean
+        // 从ServletContext获取Spring应用上下文
         WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(servletContext);
         if (context != null) {
+            // 手动获取UserService Bean
             this.userService = context.getBean(UserService.class);
         }
     }
 
+    // 【认证-01-放行判断】判断请求是否允许访问（不需要认证）
     @Override
     protected boolean isAccessAllowed(ServletRequest request, ServletResponse response, Object mappedValue) {
-        // 检查是否为OPTIONS请求，如果是则直接放行
+        // 检查是否为OPTIONS请求（CORS预检请求）
+        // 面试考点：为什么OPTIONS要放行？
+        // 答：跨域场景下，浏览器会先发OPTIONS探测服务器是否允许跨域，
+        //    此时请求头还没带Token，必须放行否则跨域失败
         if (request instanceof HttpServletRequest) {
             HttpServletRequest httpRequest = (HttpServletRequest) request;
             if ("OPTIONS".equalsIgnoreCase(httpRequest.getMethod())) {
-                return true;
+                return true; // OPTIONS请求直接放行
             }
 
-            // 对于登录、注册，允许匿名访问
+            // 匿名访问接口（不需要Token验证）
+            // 面试考点：哪些接口需要匿名访问？
+            // 答：登录、注册、静态资源、API文档等
             String requestURI = httpRequest.getRequestURI();
-            if (requestURI.endsWith("/auth/login") ||
-                    requestURI.endsWith("/auth/faceLogin") ||
-                    requestURI.endsWith("/auth/register")||
-                    requestURI.contains("/api/uploads/")||
-                    requestURI.contains("/api/swagger-ui") ||
+            if (requestURI.endsWith("/auth/login") ||           // 登录接口
+                    requestURI.endsWith("/auth/faceLogin") ||    // 人脸登录
+                    requestURI.endsWith("/auth/register")||      // 注册接口
+                    requestURI.contains("/api/uploads/")||       // 上传的静态资源
+                    requestURI.contains("/api/swagger-ui") ||    // Swagger文档
                     requestURI.contains("/api/v3/api-docs") ||
                     requestURI.contains("/api/swagger-resources") ||
                     requestURI.contains("/api/webjars") ||
                     requestURI.endsWith("/api/doc.html")) {
-                return true;
+                return true; // 匿名接口直接放行
             }
         }
 
-        return false;
+        return false; // 其他接口需要认证
     }
 
+    // 【认证-01-核心逻辑】Token验证主流程
+    // 当isAccessAllowed返回false时，调用此方法处理认证
     @Override
     protected boolean onAccessDenied(ServletRequest request, ServletResponse response) throws Exception {
         HttpServletRequest httpRequest = (HttpServletRequest) request;
         HttpServletResponse httpResponse = (HttpServletResponse) response;
 
-        // 设置响应字符编码和内容类型
+        // 设置响应字符编码和内容类型（支持中文）
         httpResponse.setCharacterEncoding("UTF-8");
         httpResponse.setContentType("application/json;charset=UTF-8");
 
-        // 设置CORS头部
+        // 设置CORS头部，允许跨域访问
+        // 面试考点：为什么要设置CORS头部？
+        // 答：前后端分离架构，前端域名和后端API域名不同，
+        //    需要CORS头部告诉浏览器允许跨域
         httpResponse.setHeader("Access-Control-Allow-Origin", httpRequest.getHeader("Origin"));
         httpResponse.setHeader("Access-Control-Allow-Credentials", "true");
         httpResponse.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
         httpResponse.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With");
 
-        // 检查是否为OPTIONS请求，如果是则直接返回
+        // 再次检查OPTIONS请求（双重保险）
         if ("OPTIONS".equalsIgnoreCase(httpRequest.getMethod())) {
             httpResponse.setStatus(HttpServletResponse.SC_OK);
             return true;
         }
 
+        // ========== 步骤1：从请求头获取Token ==========
         String token = httpRequest.getHeader("Authorization");
 
+        // 校验Token格式：必须以"Bearer "开头
+        // 面试考点：为什么是"Bearer "？
+        // 答：OAuth 2.0标准规定，Bearer Token格式为：Authorization: Bearer {token}
         if (token == null || !token.startsWith("Bearer ")) {
-            httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED); // 401状态码
             httpResponse.getWriter().write("{\"code\": 401, \"msg\": \"未提供有效的认证令牌\"}");
-            return false;
+            return false; // 认证失败，拦截请求
         }
 
-        token = token.substring(7); // 去掉 "Bearer " 前缀
+        // 去掉"Bearer "前缀，获取实际Token
+        // "Bearer "长度为7个字符
+        token = token.substring(7);
 
         try {
-            // 验证JWT token
+            // ========== 步骤2：验证Token有效性 ==========
+            // 验证内容：签名是否正确、是否过期
+            // 面试考点：JwtUtils如何验证？见JwtUtils.java
             if (!JwtUtils.validateToken(token)) {
                 httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                 httpResponse.getWriter().write("{\"code\": 401, \"msg\": \"令牌无效或已过期\"}");
                 return false;
             }
 
-            // 从token中获取用户信息
+            // ========== 步骤3：解析Token获取用户信息 ==========
+            // JWT Payload包含：userId、username、expiration（过期时间）
             Claims claims = JwtUtils.parseToken(token);
             Long userId = claims.get("userId", Long.class);
             String username = claims.get("username", String.class);
 
-            // 检查用户是否存在
+            // ========== 步骤4：查询数据库获取完整用户信息 ==========
+            // 面试考点：为什么要查数据库？Token里已经有userId和username了
+            // 答：需要获取用户最新状态、角色、权限，Token创建时可能已过期
+            //    例如：用户被禁用、角色被修改、权限被撤销
             if (userService == null) {
-                // 手动从application context获取userService
+                // 兜底：手动从application context获取userService
                 WebApplicationContext context = WebApplicationContextUtils.getWebApplicationContext(getServletContext());
                 if (context != null) {
                     userService = context.getBean(UserService.class);
@@ -125,51 +210,62 @@ public class JwtFilter extends AccessControlFilter {
                 return false;
             }
 
-            // 直接设置用户信息到当前Subject，避免触发完整的认证流程
+            // ========== 步骤5：手动绑定用户身份到Subject ==========
+            // 面试考点：为什么手动绑定？Shiro默认通过Session绑定
+            // 答：JWT无状态，不使用Session，需要手动创建Subject并绑定到当前线程
             Subject subject = getSubject(request, response);
             if (subject.isAuthenticated()) {
                 // 如果已经认证，检查是否是同一个用户
+                // 防止Token被篡改，冒充其他用户
                 User currentUser = (User) subject.getPrincipal();
                 if (!currentUser.getId().equals(user.getId())) {
-                    subject.logout();
-                    // 创建新的已认证Subject
-                    bindSubject(user, request, response);
+                    subject.logout(); // 登出旧用户
+                    bindSubject(user, request, response); // 绑定新用户
                 }
             } else {
                 // 创建新的已认证Subject
                 bindSubject(user, request, response);
             }
 
-            return true;
+            return true; // 认证成功，放行请求
+
         } catch (AuthenticationException e) {
-            // 处理认证异常
+            // 处理Shiro认证异常
             httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             httpResponse.getWriter().write("{\"code\": 401, \"msg\": \"认证失败\"}");
             return false;
         } catch (Exception e) {
-            // 处理其他异常
+            // 处理其他异常（如Token解析失败）
             httpResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             httpResponse.getWriter().write("{\"code\": 401, \"msg\": \"令牌验证失败\"}");
             return false;
         }
     }
 
-    /**
-     * 绑定用户信息到Subject
-     */
+    // 【认证-01-辅助方法】绑定Subject到当前线程
+    // 面试考点：为什么绑定到ThreadContext？
+    // 答：Shiro通过ThreadContext.bind绑定Subject到当前线程（ThreadLocal），
+    //    后续代码可以通过SecurityUtils.getSubject()获取当前用户
     private void bindSubject(User user, ServletRequest request, ServletResponse response) {
         Subject.Builder builder = new Subject.Builder();
-        // 创建PrincipalCollection
+        
+        // 创建PrincipalCollection（用户身份集合）
+        // 面试考点：什么是Principal？
+        // 答：Principal是用户的身份标识，可以是用户名、用户对象等
         org.apache.shiro.subject.PrincipalCollection principals =
                 new org.apache.shiro.subject.SimplePrincipalCollection(user, getName());
-        builder.principals(principals);
-        builder.authenticated(true);
-        Subject subject = builder.buildSubject();
+        builder.principals(principals); // 设置用户身份
+        builder.authenticated(true);    // 标记为已认证
+        
+        Subject subject = builder.buildSubject(); // 构建Subject
 
-        // 将Subject绑定到当前线程
+        // 将Subject绑定到当前线程（ThreadLocal）
+        // 面试考点：ThreadLocal的作用？
+        // 答：ThreadLocal为每个线程提供独立的变量副本，
+        //    避免多线程竞争，保证线程安全
         ThreadContext.bind(subject);
 
-        // 将Subject绑定到session（如果存在）
+        // 将Subject绑定到request属性（可选）
         request.setAttribute(DefaultSubjectContext.class.getName(), subject);
     }
 }
