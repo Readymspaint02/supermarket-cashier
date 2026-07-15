@@ -6,25 +6,9 @@ import {
   synthesizeSpeech,
   checkAgentHealth,
 } from '@/api/modules/agent';
+import { recognizeSpeech } from '@/api/modules/asr';
 
 const isClient = typeof window !== 'undefined';
-
-const resolveAsrUrl = () => {
-  const envUrl =
-    import.meta.env.VITE_ASR_WS_URL ||
-    (isClient && window.__ASR_WS_URL__) ||
-    'wss://42.194.158.40/ws-asr/';
-
-  if (!isClient) return envUrl;
-
-  const pageProtocol = window.location.protocol;
-  if (pageProtocol === 'https:' && envUrl.startsWith('ws://')) {
-    return envUrl.replace('ws://', 'wss://');
-  }
-  return envUrl;
-};
-
-const asrWsUrl = resolveAsrUrl();
 
 const supportsSpeechSynthesis = isClient && 'speechSynthesis' in window;
 
@@ -46,12 +30,6 @@ const networkRecoveryFailed = ref(false);
 const networkRecoveryAttempt = ref(0);
 const maxNetworkRecoveryAttempts = 3;
 
-const asrRecoveryInProgress = ref(false);
-const asrRecoveryMessage = ref('');
-const asrRecoveryFailed = ref(false);
-const asrRecoveryAttempt = ref(0);
-const maxAsrRecoveryAttempts = 3;
-
 const messages = ref([
   {
     id: 'hello',
@@ -61,12 +39,12 @@ const messages = ref([
   },
 ]);
 
-let asrSocket = null;
 let mediaStream = null;
 let audioContext = null;
 let processorNode = null;
 let sourceNode = null;
 let latestAudio = null;
+let audioChunks = [];
 const targetSampleRate = 16000;
 
 const togglePanel = () => {
@@ -95,95 +73,18 @@ const startVoiceInput = async () => {
     return;
   }
   try {
-    recognitionStatus.value = '正在连接语音服务...';
-    await createAsrSocket();
+    recognitionStatus.value = '正在准备录音...';
+    audioChunks = [];
     await setupAudioGraph();
     recording.value = true;
     recognitionStatus.value = '正在聆听，请开始说话';
     voiceDraft.value = '';
   } catch (error) {
     cleanupAudio();
-    closeAsrSocket();
     recognitionStatus.value = '';
     recording.value = false;
     ElMessage.error(error?.message || '语音识别服务不可用');
   }
-};
-
-const connectAsrSocketOnce = () => {
-  return new Promise((resolve, reject) => {
-    if (!asrWsUrl) {
-      reject(new Error('未配置语音识别服务地址'));
-      return;
-    }
-    asrSocket = new WebSocket(asrWsUrl);
-    asrSocket.binaryType = 'arraybuffer';
-
-    asrSocket.onopen = () => {
-      resolve();
-    };
-
-    asrSocket.onerror = () => {
-      reject(new Error('语音识别服务连接失败'));
-    };
-
-    asrSocket.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'recognition_result') {
-          voiceDraft.value = data.text || '';
-          if (data.is_final) {
-            finalizeVoiceText(data.text || '');
-          }
-        } else if (data.type === 'error') {
-          recognitionStatus.value = '';
-          ElMessage.error(data.message || '语音识别失败');
-          stopVoiceCapture(false);
-          closeAsrSocket();
-        } else if (data.type === 'end') {
-          recognitionStatus.value = '';
-          closeAsrSocket();
-        }
-      } catch (err) {
-        console.warn('无法解析语音识别消息', err);
-      }
-    };
-
-    asrSocket.onclose = () => {
-      recording.value = false;
-    };
-  });
-};
-
-const createAsrSocket = async () => {
-  let lastError = null;
-  for (
-    let attemptIndex = 0;
-    attemptIndex < maxAsrRecoveryAttempts;
-    attemptIndex++
-  ) {
-    try {
-      if (attemptIndex > 0) {
-        showAsrRecoveryAttempt(attemptIndex);
-        await wait(1000);
-      }
-      await connectAsrSocketOnce();
-      if (attemptIndex > 0) {
-        markAsrRecoverySuccess();
-      } else {
-        resetAsrRecoveryState();
-      }
-      return;
-    } catch (error) {
-      lastError = error;
-      const shouldRetry = attemptIndex < maxAsrRecoveryAttempts - 1;
-      if (!shouldRetry) {
-        markAsrRecoveryFailure();
-        break;
-      }
-    }
-  }
-  throw lastError || new Error('语音识别服务连接失败');
 };
 
 const setupAudioGraph = async () => {
@@ -204,7 +105,7 @@ const setupAudioGraph = async () => {
   sourceNode.connect(processorNode);
   processorNode.connect(audioContext.destination);
   processorNode.onaudioprocess = (event) => {
-    if (!recording.value || !asrSocket || asrSocket.readyState !== WebSocket.OPEN) {
+    if (!recording.value) {
       return;
     }
     const inputData = event.inputBuffer.getChannelData(0);
@@ -215,22 +116,55 @@ const setupAudioGraph = async () => {
     );
     if (!downsampled) return;
     const int16Data = convertFloat32ToInt16(downsampled);
-    asrSocket.send(int16Data.buffer);
+    audioChunks.push(int16Data);
   };
 };
 
-const finalizeVoiceText = (text) => {
+const finalizeVoiceText = async () => {
   stopVoiceCapture(false);
-  recognitionStatus.value = '';
-  voiceDraft.value = '';
-  if (text) {
-    inputText.value = inputText.value
-      ? `${inputText.value} ${text}`
-      : text;
+  recognitionStatus.value = '正在识别语音...';
+  
+  try {
+    const totalLength = audioChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const combinedData = new Int16Array(totalLength);
+    let offset = 0;
+    for (const chunk of audioChunks) {
+      combinedData.set(chunk, offset);
+      offset += chunk.length;
+    }
+    
+    const base64Audio = arrayBufferToBase64(combinedData.buffer);
+    
+    const res = await recognizeSpeech({
+      audioBase64: base64Audio,
+      audioFormat: 'wav',
+      property: 'chinese_16k_common'
+    });
+    
+    const text = res.data || '';
+    recognitionStatus.value = '';
+    voiceDraft.value = '';
+    if (text) {
+      inputText.value = inputText.value
+        ? `${inputText.value} ${text}`
+        : text;
+    }
+    audioChunks = [];
+  } catch (error) {
+    recognitionStatus.value = '';
+    voiceDraft.value = '';
+    audioChunks = [];
+    ElMessage.error(error?.message || '语音识别失败');
   }
-  if (asrSocket && asrSocket.readyState === WebSocket.OPEN) {
-    asrSocket.close();
+};
+
+const arrayBufferToBase64 = (buffer) => {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
   }
+  return btoa(binary);
 };
 
 const downSampleBuffer = (buffer, sampleRate, outRate) => {
@@ -270,7 +204,7 @@ const convertFloat32ToInt16 = (buffer) => {
   return result;
 };
 
-const stopVoiceCapture = (sendEnd = true) => {
+const stopVoiceCapture = async (sendForRecognition = true) => {
   if (!recording.value && !mediaStream) return;
   recording.value = false;
   if (processorNode) {
@@ -290,9 +224,12 @@ const stopVoiceCapture = (sendEnd = true) => {
     audioContext.close();
     audioContext = null;
   }
-  if (sendEnd && asrSocket && asrSocket.readyState === WebSocket.OPEN) {
-    asrSocket.send(JSON.stringify({ command: 'END' }));
-    recognitionStatus.value = '正在处理语音...';
+  if (sendForRecognition && audioChunks.length > 0) {
+    await finalizeVoiceText();
+  } else {
+    audioChunks = [];
+    recognitionStatus.value = '';
+    voiceDraft.value = '';
   }
 };
 
@@ -314,24 +251,12 @@ const cleanupAudio = () => {
   sourceNode = null;
   mediaStream = null;
   audioContext = null;
-};
-
-const closeAsrSocket = () => {
-  if (asrSocket) {
-    try {
-      asrSocket.close();
-    } catch (error) {
-      console.warn('关闭语音 WebSocket 失败', error);
-    }
-  }
-  asrSocket = null;
-  recognitionStatus.value = '';
-  voiceDraft.value = '';
+  audioChunks = [];
 };
 
 const toggleVoice = async () => {
   if (recording.value) {
-    stopVoiceCapture(true);
+    await stopVoiceCapture(true);
   } else {
     await startVoiceInput();
   }
@@ -459,43 +384,6 @@ const markNetworkRecoveryFailure = () => {
   networkRecoveryMessage.value = '网络异常，请等待网络维修中 (3/3)';
 };
 
-const resetAsrRecoveryState = () => {
-  asrRecoveryInProgress.value = false;
-  asrRecoveryFailed.value = false;
-  asrRecoveryAttempt.value = 0;
-  asrRecoveryMessage.value = '';
-};
-
-const showAsrRecoveryAttempt = (attempt) => {
-  asrRecoveryInProgress.value = true;
-  asrRecoveryFailed.value = false;
-  asrRecoveryAttempt.value = attempt;
-  const labels = {
-    1: '语音服务网络异常，正在重连 (1/3)',
-    2: '语音服务重连中 (2/3)',
-  };
-  asrRecoveryMessage.value =
-    labels[attempt] ||
-    `语音服务重连 (${attempt}/${maxAsrRecoveryAttempts})`;
-};
-
-const markAsrRecoverySuccess = () => {
-  asrRecoveryInProgress.value = false;
-  asrRecoveryFailed.value = false;
-  asrRecoveryAttempt.value = 0;
-  asrRecoveryMessage.value = '语音识别服务已恢复';
-  setTimeout(() => {
-    asrRecoveryMessage.value = '';
-  }, 2500);
-};
-
-const markAsrRecoveryFailure = () => {
-  asrRecoveryInProgress.value = false;
-  asrRecoveryFailed.value = true;
-  asrRecoveryAttempt.value = maxAsrRecoveryAttempts;
-  asrRecoveryMessage.value = '语音识别服务连接失败，请稍候再试 (3/3)';
-};
-
 const isLikelyNetworkIssue = (error) => {
   if (!error) return false;
   const message = String(error?.message || '').toLowerCase();
@@ -578,8 +466,13 @@ const sendMessage = async () => {
     appendMessage('assistant', reply);
     await playAssistantSpeech(reply);
   } catch (error) {
-    appendMessage('assistant', '抱歉，我暂时无法处理这个请求。');
-    ElMessage.error(error?.message || '智能体接口调用失败');
+    if (error?.isAuthError) {
+      appendMessage('assistant', error.authMessage || '请登录后使用');
+      ElMessage.warning('请先登录后再使用智慧助手');
+    } else {
+      appendMessage('assistant', '抱歉，我暂时无法处理这个请求。');
+      ElMessage.error(error?.message || '智能体接口调用失败');
+    }
   } finally {
     sending.value = false;
   }
@@ -627,7 +520,6 @@ const handleKeySend = (event) => {
 onBeforeUnmount(() => {
   stopVoiceCapture(false);
   cleanupAudio();
-  closeAsrSocket();
   if (latestAudio) {
     latestAudio.pause();
     latestAudio = null;
@@ -671,22 +563,6 @@ onBeforeUnmount(() => {
         </div>
 
         <div
-          v-if="asrRecoveryMessage"
-          class="agent-network-status"
-          :class="{ 'agent-network-status--error': asrRecoveryFailed }"
-        >
-          <span>{{ asrRecoveryMessage }}</span>
-          <el-button
-            v-if="asrRecoveryFailed"
-            size="small"
-            type="warning"
-            @click="toggleVoice"
-          >
-            重试语音
-          </el-button>
-        </div>
-
-        <div
           v-if="networkRecoveryMessage"
           class="agent-network-status"
           :class="{ 'agent-network-status--error': networkRecoveryFailed }"
@@ -714,8 +590,6 @@ onBeforeUnmount(() => {
             <el-button
               size="small"
               :type="recording ? 'danger' : 'info'"
-              :loading="asrRecoveryInProgress && !recording"
-              :disabled="asrRecoveryInProgress && !recording"
               @click="toggleVoice"
             >
               {{ recording ? '结束录音' : '语音输入' }}
