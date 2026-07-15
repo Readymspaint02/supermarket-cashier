@@ -3,6 +3,7 @@ package com.zmj.gbs_commerce_system.service;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zmj.gbs_commerce_system.entity.Member;
+import com.zmj.gbs_commerce_system.entity.RechargeRecord;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -18,6 +19,8 @@ public interface MemberService {
 
     Member findByMemberId(String memberId);
 
+    Member findByPhone(String phone);
+
     boolean createMember(Member member);
 
     boolean updateMember(Member member);
@@ -27,4 +30,6 @@ public interface MemberService {
     boolean deductBalance(String memberId, BigDecimal amount);
 
     boolean addBalance(String memberId, BigDecimal amount);
+
+    RechargeRecord recharge(String memberId, BigDecimal rechargeAmount, BigDecimal giftAmount, Integer pointsToAdd, String operator, String remark);
 }

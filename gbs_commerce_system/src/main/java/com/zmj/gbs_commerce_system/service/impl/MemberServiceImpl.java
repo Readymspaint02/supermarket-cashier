@@ -67,7 +67,9 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.zmj.gbs_commerce_system.entity.Member;
+import com.zmj.gbs_commerce_system.entity.RechargeRecord;
 import com.zmj.gbs_commerce_system.mapper.MemberMapper;
+import com.zmj.gbs_commerce_system.mapper.RechargeRecordMapper;
 import com.zmj.gbs_commerce_system.service.MemberService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -78,6 +80,8 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -88,10 +92,13 @@ public class MemberServiceImpl implements MemberService {
 
     // 【缓存-01-依赖注入】数据库Mapper和Redis模板
     @Autowired
-    private MemberMapper memberMapper;               // 会员表Mapper
+    private MemberMapper memberMapper;
 
     @Autowired
-    private RedisTemplate<String, Object> redisTemplate; // Redis操作模板
+    private RechargeRecordMapper rechargeRecordMapper;
+
+    @Autowired
+    private RedisTemplate<String, Object> redisTemplate;
 
     // 【缓存-01-常量定义】缓存key前缀和TTL
     private static final String CACHE_PREFIX = "member:";  // 缓存key前缀
@@ -187,6 +194,14 @@ public class MemberServiceImpl implements MemberService {
         }
         
         return member;
+    }
+
+    @Override
+    public Member findByPhone(String phone) {
+        if (phone == null || phone.isEmpty()) {
+            return null;
+        }
+        return memberMapper.selectByPhone(phone);
     }
 
     // 【缓存-01-创建方法】创建会员（写入缓存）
@@ -317,5 +332,66 @@ public class MemberServiceImpl implements MemberService {
         }
 
         return rows > 0;
+    }
+
+    @Override
+    @Transactional
+    public RechargeRecord recharge(String memberId, BigDecimal rechargeAmount, BigDecimal giftAmount, Integer pointsToAdd, String operator, String remark) {
+        if (memberId == null || memberId.isEmpty()) {
+            throw new RuntimeException("会员编号不能为空");
+        }
+        if (rechargeAmount == null || rechargeAmount.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new RuntimeException("充值金额必须大于0");
+        }
+
+        Member member = findByMemberId(memberId);
+        if (member == null) {
+            throw new RuntimeException("会员不存在: " + memberId);
+        }
+
+        BigDecimal balanceBefore = member.getBalance() != null ? member.getBalance() : BigDecimal.ZERO;
+        BigDecimal gift = giftAmount != null ? giftAmount : BigDecimal.ZERO;
+        BigDecimal totalAmount = rechargeAmount.add(gift);
+        BigDecimal balanceAfter = balanceBefore.add(totalAmount);
+
+        member.setBalance(balanceAfter);
+        
+        int autoPoints = 0;
+        if (pointsToAdd != null && pointsToAdd > 0) {
+            autoPoints = pointsToAdd;
+        } else {
+            autoPoints = totalAmount.divide(new BigDecimal("10"), 0, java.math.RoundingMode.DOWN).intValue();
+        }
+        if (autoPoints > 0) {
+            int currentPoints = member.getPoints() != null ? member.getPoints() : 0;
+            member.setPoints(currentPoints + autoPoints);
+        }
+        
+        int rows = memberMapper.updateById(member);
+
+        if (rows > 0) {
+            String cacheKey = CACHE_PREFIX + member.getMemberId();
+            redisTemplate.opsForValue().set(cacheKey, member, CACHE_TTL, TimeUnit.MINUTES);
+            log.info("会员充值成功: memberId={}, 充值金额={}, 赠送金额={}, 增加积分={}, 充值后余额={}", 
+                    memberId, rechargeAmount, gift, pointsToAdd, balanceAfter);
+        }
+
+        RechargeRecord record = new RechargeRecord();
+        record.setMemberId(memberId);
+        record.setMemberName(member.getName());
+        record.setRechargeAmount(rechargeAmount);
+        record.setGiftAmount(gift);
+        record.setTotalAmount(totalAmount);
+        record.setPointsAdded(autoPoints);
+        record.setBalanceBefore(balanceBefore);
+        record.setBalanceAfter(balanceAfter);
+        record.setOperator(operator);
+        record.setRemark(remark);
+        record.setCreateTime(new Date());
+        rechargeRecordMapper.insert(record);
+        
+        log.info("充值记录已保存: recordId={}, memberId={}", record.getId(), memberId);
+        
+        return record;
     }
 }

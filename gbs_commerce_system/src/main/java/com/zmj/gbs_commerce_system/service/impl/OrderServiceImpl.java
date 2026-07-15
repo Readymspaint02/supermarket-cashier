@@ -75,6 +75,7 @@ import com.zmj.gbs_commerce_system.dto.OrderPaidMessage;
 import com.zmj.gbs_commerce_system.entity.*;
 import com.zmj.gbs_commerce_system.mapper.InventoryLogMapper;
 import com.zmj.gbs_commerce_system.mapper.InventoryMapper;
+import com.zmj.gbs_commerce_system.mapper.MemberMapper;
 import com.zmj.gbs_commerce_system.mapper.OrderItemMapper;
 import com.zmj.gbs_commerce_system.mapper.OrdersMapper;
 import com.zmj.gbs_commerce_system.mapper.ProductMapper;
@@ -117,6 +118,9 @@ public class OrderServiceImpl implements OrderService {
     private InventoryLogMapper inventoryLogMapper; // 库存日志表（记录变动）
 
     @Autowired
+    private MemberMapper memberMapper; // 会员表（查询会员信息）
+
+    @Autowired
     private RabbitTemplate rabbitTemplate;
 
     @Autowired
@@ -138,6 +142,10 @@ public class OrderServiceImpl implements OrderService {
 
         if (queryParams != null && queryParams.containsKey("orderStatus") && queryParams.get("orderStatus") != null) {
             queryWrapper.eq("order_status", queryParams.get("orderStatus")); // 订单状态精确查询
+        }
+
+        if (queryParams != null && queryParams.containsKey("paymentMethod") && queryParams.get("paymentMethod") != null) {
+            queryWrapper.eq("payment_method", queryParams.get("paymentMethod")); // 支付方式精确查询
         }
 
         if (queryParams != null && queryParams.containsKey("startTime") && queryParams.get("startTime") != null) {
@@ -252,8 +260,14 @@ public class OrderServiceImpl implements OrderService {
         }
 
         // 会员ID（可选）
-        if (orderData.containsKey("memberId")) {
-            order.setMemberId(orderData.get("memberId").toString());
+        if (orderData.containsKey("memberId") && orderData.get("memberId") != null) {
+            String memberId = orderData.get("memberId").toString();
+            order.setMemberId(memberId);
+            
+            Member member = memberMapper.selectByMemberId(memberId);
+            if (member != null) {
+                order.setMemberName(member.getName());
+            }
         }
 
         // 备注（可选）

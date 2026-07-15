@@ -54,6 +54,7 @@ public class MemberPointsConsumer {
                 try {
                     memberService.deductBalance(message.getMemberId(), message.getPaidAmount());
                     log.info("余额支付扣减成功: memberId={}, 扣减金额={}", message.getMemberId(), message.getPaidAmount());
+                    member = memberMapper.selectByMemberId(message.getMemberId());
                 } catch (Exception e) {
                     log.error("余额扣减失败: memberId={}, error={}", message.getMemberId(), e.getMessage());
                     throw e;

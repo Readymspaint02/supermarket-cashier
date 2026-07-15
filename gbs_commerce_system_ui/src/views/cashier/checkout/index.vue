@@ -86,6 +86,37 @@
           </template>
 
           <div class="settle-info">
+            <div class="member-section">
+              <p class="section-title">会员识别（可选）</p>
+              <div class="member-input-row">
+                <el-input
+                  v-model="memberIdInput"
+                  placeholder="输入会员编号 / 手机号"
+                  style="flex: 1"
+                  @keyup.enter="queryMember"
+                  clearable
+                >
+                  <template #prefix>
+                    <el-icon><User /></el-icon>
+                  </template>
+                </el-input>
+                <el-button type="primary" @click="queryMember">查询</el-button>
+                <el-button v-if="memberInfo" type="danger" @click="clearMember">清除</el-button>
+              </div>
+              <div v-if="memberInfo" class="member-info-card">
+                <div class="member-avatar">{{ memberInfo.name?.charAt(0) || '会' }}</div>
+                <div class="member-detail">
+                  <div class="member-name">{{ memberInfo.name }} <el-tag size="small" type="warning">{{ memberInfo.level || '普通会员' }}</el-tag></div>
+                  <div class="member-stats">
+                    <span>余额：<b>¥{{ memberInfo.balance?.toFixed(2) || '0.00' }}</b></span>
+                    <span style="margin-left: 16px">积分：<b>{{ memberInfo.points || 0 }}</b></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <el-divider />
+
             <div class="info-row">
               <span class="label">商品种类</span>
               <span class="value">{{ cart.length }} 种</span>
@@ -132,20 +163,9 @@
                 <el-radio :value="5" border>刷脸支付</el-radio>
                 <el-radio :value="6" border :disabled="!memberInfo">余额支付</el-radio>
               </el-radio-group>
-              <div v-if="memberInfo" class="member-info">
-                <span>会员：{{ memberInfo.name }}</span>
-                <span style="margin-left: 20px">余额：¥{{ memberInfo.balance?.toFixed(2) || '0.00' }}</span>
-                <span style="margin-left: 20px">积分：{{ memberInfo.points || 0 }}</span>
-              </div>
-              <div class="member-input-row">
-                <el-input
-                  v-model="memberIdInput"
-                  placeholder="输入会员编号后按回车查询"
-                  style="width: 200px"
-                  @keyup.enter="queryMember"
-                />
-                <el-button size="small" @click="queryMember">查询会员</el-button>
-                <el-button size="small" type="danger" v-if="memberInfo" @click="clearMember">清除会员</el-button>
+              <div v-if="!memberInfo" class="member-tip">
+                <el-icon><InfoFilled /></el-icon>
+                <span>选择"余额支付"需先识别会员</span>
               </div>
             </div>
 
@@ -270,7 +290,7 @@
 <script setup>
 import { ref, computed, onMounted, nextTick, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, CreditCard, Camera, Loading, Download } from '@element-plus/icons-vue'
+import { Search, CreditCard, Camera, Loading, Download, User, InfoFilled } from '@element-plus/icons-vue'
 import html2canvas from 'html2canvas'
 import { getProductByBarcode, getProductByCode } from '@/api/modules/product'
 import { getInventoryByProductId } from '@/api/modules/inventory'
@@ -872,19 +892,81 @@ onBeforeUnmount(() => {
   margin-top: 8px;
 }
 
-.member-info {
-  margin-top: 10px;
-  padding: 8px 12px;
-  background: #e6f7ff;
-  border-radius: 6px;
-  font-size: 13px;
-  color: #1890ff;
-}
-
 .member-input-row {
-  margin-top: 10px;
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.member-section {
+  background: #f8f9fb;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 4px;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #606266;
+  margin-bottom: 10px;
+}
+
+.member-info-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 8px;
+  color: #fff;
+}
+
+.member-avatar {
+  width: 48px;
+  height: 48px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: bold;
+}
+
+.member-detail {
+  flex: 1;
+}
+
+.member-name {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.member-name .el-tag {
+  margin-left: 8px;
+}
+
+.member-stats {
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.member-stats b {
+  font-size: 15px;
+}
+
+.member-tip {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #fdf6ec;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #e6a23c;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 </style>
