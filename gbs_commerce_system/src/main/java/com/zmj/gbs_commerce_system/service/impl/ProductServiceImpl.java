@@ -127,8 +127,12 @@ public class ProductServiceImpl implements ProductService {
     @Transactional
     public boolean saveProduct(Product product) {
         if (product.getProductCode() == null || product.getProductCode().isEmpty()) {
-            product.setProductCode(BarcodeUtil.generateEAN13());
-            log.info("自动生成商品条码: {}", product.getProductCode());
+            if (product.getBarcode() != null && !product.getBarcode().isEmpty()) {
+                product.setProductCode(product.getBarcode());
+            } else {
+                product.setProductCode(BarcodeUtil.generateEAN13());
+                log.info("自动生成商品条码: {}", product.getProductCode());
+            }
         }
         if (product.getBarcode() == null || product.getBarcode().isEmpty()) {
             product.setBarcode(product.getProductCode());
@@ -153,6 +157,10 @@ public class ProductServiceImpl implements ProductService {
     @Override
     @Transactional
     public boolean updateProduct(Product product) {
+        if (product.getBarcode() == null || product.getBarcode().isEmpty()) {
+            product.setBarcode(product.getProductCode());
+        }
+        
         product.setProductImage(downloadImageIfNeeded(product.getProductImage()));
         
         if (productMapper.updateById(product) > 0) {
