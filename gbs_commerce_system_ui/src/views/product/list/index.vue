@@ -236,16 +236,26 @@
               />
               <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
             </el-upload>
-            <el-button 
-              type="primary" 
-              size="small" 
-              :loading="fetchImageLoading"
-              @click="fetchProductImage"
-              style="margin-top: 10px"
-            >
-              <el-icon><Picture /></el-icon>
-              自动获取图片
-            </el-button>
+            <div class="image-buttons">
+              <el-button 
+                type="primary" 
+                size="small" 
+                :loading="fetchImageLoading"
+                @click="fetchProductImage"
+              >
+                <el-icon><Picture /></el-icon>
+                自动获取图片
+              </el-button>
+              <el-button 
+                type="warning" 
+                size="small" 
+                :disabled="!searchedImageUrls.length"
+                @click="nextImage"
+              >
+                <el-icon><Refresh /></el-icon>
+                换一张 ({{ currentImageIndex + 1 }}/{{ searchedImageUrls.length || 0 }})
+              </el-button>
+            </div>
           </div>
           <div class="upload-tip">支持jpg/png格式，大小不超过2MB，或点击按钮自动获取网络图片</div>
         </el-form-item>
@@ -305,7 +315,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Plus, Camera, Picture } from '@element-plus/icons-vue';
+import { Plus, Camera, Picture, Refresh } from '@element-plus/icons-vue';
 import {
   getProductPage,
   addProduct,
@@ -327,6 +337,8 @@ const formRef = ref(null);
 const token = ref(localStorage.getItem('token') || '');
 const scannerDialogVisible = ref(false);
 const fetchImageLoading = ref(false);
+const searchedImageUrls = ref([]);
+const currentImageIndex = ref(0);
 
 // 上传headers（计算属性，自动响应token变化）
 const uploadHeaders = computed(() => ({
@@ -623,23 +635,37 @@ const fetchProductImage = async () => {
   }
   
   fetchImageLoading.value = true;
+  currentImageIndex.value = 0;
   try {
     const data = await http.get('/image/search', {
       params: { keyword: formData.productName }
     });
     
     if (data.code === 200 && data.data && data.data.length > 0) {
+      searchedImageUrls.value = data.data;
       formData.productImage = data.data[0];
-      ElMessage.success('图片获取成功，共找到' + data.data.length + '张');
+      ElMessage.success('图片获取成功，共找到' + data.data.length + '张，可点击"换一张"切换');
     } else {
+      searchedImageUrls.value = [];
       ElMessage.warning(data.msg || '未找到相关图片，请手动上传');
     }
   } catch (error) {
     console.error('获取图片失败', error);
+    searchedImageUrls.value = [];
     ElMessage.error('自动获取图片失败，请手动上传');
   } finally {
     fetchImageLoading.value = false;
   }
+};
+
+const nextImage = () => {
+  if (searchedImageUrls.value.length === 0) return;
+  
+  currentImageIndex.value++;
+  if (currentImageIndex.value >= searchedImageUrls.value.length) {
+    currentImageIndex.value = 0;
+  }
+  formData.productImage = searchedImageUrls.value[currentImageIndex.value];
 };
 
 </script>
@@ -714,6 +740,12 @@ const fetchProductImage = async () => {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+}
+
+.image-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .image-slot {
