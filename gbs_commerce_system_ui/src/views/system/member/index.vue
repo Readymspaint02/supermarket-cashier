@@ -10,22 +10,24 @@
 
       <el-form :inline="true" :model="searchForm" class="search-form">
         <el-form-item label="会员号">
-          <el-input v-model="searchForm.memberId" placeholder="会员号"></el-input>
+          <el-input v-model="searchForm.memberId" placeholder="会员号" @keyup.enter.native="handleSearch"></el-input>
         </el-form-item>
         <el-form-item label="会员姓名">
-          <el-input v-model="searchForm.name" placeholder="姓名"></el-input>
+          <el-input v-model="searchForm.name" placeholder="姓名" @keyup.enter.native="handleSearch"></el-input>
         </el-form-item>
         <el-form-item label="手机号">
-          <el-input v-model="searchForm.phone" placeholder="手机号"></el-input>
+          <el-input v-model="searchForm.phone" placeholder="手机号" @keyup.enter.native="handleSearch"></el-input>
         </el-form-item>
         <el-form-item label="等级">
-          <el-select v-model="searchForm.level" placeholder="全部" clearable>
+          <el-select v-model="searchForm.level" placeholder="全部" clearable style="width: 160px">
             <el-option
               v-for="item in levelOptions"
               :key="item.value"
               :label="`${item.badge} ${item.value}`"
               :value="item.value"
-            />
+            >
+              <span>{{ item.badge }} {{ item.value }}</span>
+            </el-option>
           </el-select>
         </el-form-item>
         <el-form-item>
@@ -66,8 +68,9 @@
           </template>
         </el-table-column>
         <!-- <el-table-column prop="createTime" label="创建时间" /> -->
-        <el-table-column label="操作" width="260">
+        <el-table-column label="操作" width="320">
           <template #default="{ row }">
+            <el-button size="small" type="warning" @click="openRechargeDialog(row)">充值</el-button>
             <el-button size="small" @click="openDialog(row)">编辑</el-button>
             <el-button 
               size="small" 
@@ -166,6 +169,50 @@
       </template>
     </el-dialog>
 
+    <el-dialog title="会员充值" v-model="rechargeDialogVisible" width="450px">
+      <div class="recharge-info">
+        <p><strong>会员号：</strong>{{ rechargeMember.memberId }}</p>
+        <p><strong>姓名：</strong>{{ rechargeMember.name }}</p>
+        <p><strong>当前余额：</strong>￥{{ Number(rechargeMember.balance || 0).toFixed(2) }}</p>
+        <p><strong>当前积分：</strong>{{ rechargeMember.points || 0 }}</p>
+      </div>
+      <el-divider />
+      <div class="recharge-rules">
+        <el-alert type="info" :closable="false">
+          <template #title>充值规则</template>
+          <div class="rule-content">
+            <p>1. 充值100元以下：无赠送</p>
+            <p>2. 充值100-499元：赠送5%金额 + 充值金额/10 积分</p>
+            <p>3. 充值500-999元：赠送10%金额 + 充值金额/10 积分</p>
+            <p>4. 充值1000元以上：赠送15%金额 + 充值金额/10 积分</p>
+          </div>
+        </el-alert>
+      </div>
+      <el-form :model="rechargeForm" :rules="rechargeRules" ref="rechargeFormRef" label-width="100px" style="margin-top: 16px">
+        <el-form-item label="充值金额" prop="rechargeAmount">
+          <el-input-number v-model="rechargeForm.rechargeAmount" :min="1" :precision="2" :step="100" style="width: 200px" @change="calculateGift" />
+        </el-form-item>
+        <el-form-item label="赠送金额">
+          <span class="auto-value gift-amount">￥{{ rechargeForm.giftAmount.toFixed(2) }}</span>
+          <span class="auto-tip">（自动计算）</span>
+        </el-form-item>
+        <el-form-item label="赠送积分">
+          <span class="auto-value points-value">{{ rechargeForm.pointsToAdd }} 积分</span>
+          <span class="auto-tip">（自动计算）</span>
+        </el-form-item>
+        <el-form-item label="到账金额">
+          <span class="total-amount">￥{{ ((rechargeForm.rechargeAmount || 0) + rechargeForm.giftAmount).toFixed(2) }}</span>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="rechargeForm.remark" type="textarea" :rows="2" placeholder="充值备注（选填）" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="rechargeDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitRecharge" :loading="rechargeLoading">确认充值</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog :title="faceDialogTitle" v-model="faceDialogVisible" width="480px">
       <div class="face-register-content">
         <div class="face-info">
@@ -205,6 +252,35 @@ const memberList = ref([])
 const loading = ref(false)
 const dialogVisible = ref(false)
 const dialogTitle = ref('新增会员')
+
+const rechargeDialogVisible = ref(false)
+const rechargeMember = ref({})
+const rechargeLoading = ref(false)
+const rechargeFormRef = ref(null)
+const rechargeForm = reactive({
+  memberId: '',
+  rechargeAmount: 100,
+  giftAmount: 0,
+  pointsToAdd: 0,
+  remark: ''
+})
+const rechargeRules = {
+  rechargeAmount: [{ required: true, message: '请输入充值金额', trigger: 'blur' }]
+}
+
+const calculateGift = () => {
+  const amount = rechargeForm.rechargeAmount || 0
+  let giftRate = 0
+  if (amount >= 1000) {
+    giftRate = 0.15
+  } else if (amount >= 500) {
+    giftRate = 0.10
+  } else if (amount >= 100) {
+    giftRate = 0.05
+  }
+  rechargeForm.giftAmount = Number((amount * giftRate).toFixed(2))
+  rechargeForm.pointsToAdd = Math.floor(amount / 10)
+}
 
 const faceDialogVisible = ref(false)
 const faceDialogTitle = ref('人脸注册')
@@ -408,6 +484,39 @@ onMounted(() => {
   loadMembers()
 })
 
+const openRechargeDialog = (row) => {
+  rechargeMember.value = row
+  rechargeForm.memberId = row.memberId
+  rechargeForm.rechargeAmount = 100
+  rechargeForm.giftAmount = 0
+  rechargeForm.pointsToAdd = 0
+  rechargeForm.remark = ''
+  rechargeDialogVisible.value = true
+  calculateGift()
+}
+
+const submitRecharge = () => {
+  rechargeFormRef.value.validate(async (valid) => {
+    if (!valid) return
+    try {
+      rechargeLoading.value = true
+      const res = await http.post('/system/member/recharge', rechargeForm)
+      if (res.code === 200) {
+        ElMessage.success(`充值成功！到账金额：￥${res.data.totalAmount}`)
+        rechargeDialogVisible.value = false
+        loadMembers()
+      } else {
+        ElMessage.error(res.msg || '充值失败')
+      }
+    } catch (error) {
+      ElMessage.error('充值失败')
+      console.error(error)
+    } finally {
+      rechargeLoading.value = false
+    }
+  })
+}
+
 const openFaceRegister = async (row) => {
   faceRegisterMember.value = row
   capturedImage.value = ''
@@ -515,6 +624,55 @@ onBeforeUnmount(() => {
 .member-pagination {
   margin-top: 20px;
   text-align: right;
+}
+
+.recharge-info {
+  padding: 12px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  line-height: 1.8;
+}
+
+.recharge-info p {
+  margin: 4px 0;
+}
+
+.recharge-rules {
+  margin-bottom: 8px;
+}
+
+.rule-content {
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.rule-content p {
+  margin: 2px 0;
+}
+
+.auto-value {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.gift-amount {
+  color: #67c23a;
+}
+
+.points-value {
+  color: #409eff;
+}
+
+.auto-tip {
+  font-size: 12px;
+  color: #909399;
+  margin-left: 8px;
+}
+
+.total-amount {
+  font-size: 18px;
+  font-weight: bold;
+  color: #e6a23c;
 }
 
 .level-badge {
