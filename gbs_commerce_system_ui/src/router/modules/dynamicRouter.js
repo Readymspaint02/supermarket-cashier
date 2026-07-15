@@ -2,20 +2,15 @@ import router from "../index";
 import { ElNotification } from "element-plus";
 import { getAuthMenuList } from "@/api/modules/menu";
 
-// 引入 views 文件夹下所有 vue 文件
 const modules = import.meta.glob("@/views/**/*.vue");
 
-/**
- * @description 初始化动态路由
- */
 export const initDynamicRouter = async () => {
   try {
     await getAuthMenuList();
     let authMenuList = localStorage.getItem("authMenuList")
-    // 2.判断当前用户有没有菜单权限
     if (authMenuList) {
       authMenuList = JSON.parse(authMenuList)
-      console.log(authMenuList)
+      console.log('菜单列表:', authMenuList)
       if (!authMenuList.length) {
         ElNotification({
           title: "无权限访问",
@@ -29,24 +24,25 @@ export const initDynamicRouter = async () => {
       }
     }
 
-    // 3.添加动态路由
-    // 3.添加动态路由（包含子路由）
     const convertToRoute = (item) => {
-      // 转换后端字段到前端路由需要的字段
       const routeItem = {
-        ...item,
-        name: item.menuName,
+        name: item.path.replace(/\//g, '_') || `route_${item.id}`,
         path: item.path,
+        meta: {
+          title: item.menuName,
+          icon: item.icon
+        }
       };
 
-      // 处理组件
-      if (routeItem.component && typeof routeItem.component == "string") {
-        routeItem.component = modules["/src/views/" + routeItem.component + ".vue"];
+      if (item.component && typeof item.component === "string") {
+        const compPath = item.component.startsWith('views/') 
+          ? `/src/${item.component}.vue` 
+          : `/src/views/${item.component}.vue`;
+        routeItem.component = modules[compPath];
       }
 
-      // 递归处理子路由
-      if (routeItem.children && routeItem.children.length > 0) {
-        routeItem.children = routeItem.children.map(convertToRoute);
+      if (item.children && item.children.length > 0) {
+        routeItem.children = item.children.map(convertToRoute);
       }
 
       return routeItem;
@@ -54,13 +50,14 @@ export const initDynamicRouter = async () => {
 
     authMenuList.forEach(item => {
       const routeItem = convertToRoute(item);
-      router.addRoute("layout", routeItem);
+      if (routeItem.component || (routeItem.children && routeItem.children.length > 0)) {
+        router.addRoute("layout", routeItem);
+      }
     });
 
-    // 获取已添加的路由
-    console.log(router.getRoutes());
+    console.log('已注册路由:', router.getRoutes().map(r => r.path));
   } catch (error) {
-    // 当按钮 || 菜单请求出错时，重定向到登陆页
+    console.error('路由初始化失败:', error);
     localStorage.removeItem("token");
     router.replace('/login');
     return Promise.reject(error);
