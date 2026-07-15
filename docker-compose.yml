@@ -1,54 +1,207 @@
-version: '3.9'
+# ============================================================
+# 【部署-01】docker-compose.yml - Docker多服务编排配置
+# ============================================================
+# 
+# 文件作用：
+# 一键部署整个项目，包括MySQL、Redis、RabbitMQ、后端、前端、MCP服务。
+# 核心功能：容器编排、网络配置、数据持久化、环境变量管理。
+# 
+# 技术原理：
+# - Docker Compose：多容器编排工具
+# - Network：容器间通信网络（gbs-network）
+# - Volume：数据持久化（mysql_data、redis_data等）
+# - Environment：环境变量注入
+# 
+# 服务架构：
+# ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+# │   Frontend  │────▶│   Backend   │────▶│    MySQL    │
+# │   (Nginx)   │     │   (Java)    │     │             │
+# └─────────────┘     └─────────────┘     └─────────────┘
+#                            │
+#                     ┌──────┴──────┐
+#                     ▼             ▼
+#               ┌──────────┐  ┌───────────┐
+#               │  Redis   │  │ RabbitMQ  │
+#               └──────────┘  └───────────┘
+# 
+# 面试考点：
+# - Q1：Docker Compose的作用？
+#   A1：一键启动多个容器，自动处理依赖关系、网络、数据卷。
+#       不用手动docker run一个个启动。
+# 
+# - Q2：为什么用networks？
+#   A2：容器间通信需要网络。自定义网络后，容器可以通过服务名互相访问。
+#       例如：backend容器通过mysql:3306访问MySQL。
+# 
+# - Q3：volumes的作用？
+#   A3：数据持久化。容器删除后数据不丢失，挂载到宿主机。
+#       例如：mysql_data:/var/lib/mysql 将MySQL数据存储到宿主机。
+# 
+# - Q4：depends_on的作用？
+#   A4：定义启动顺序。backend依赖mysql、redis、rabbitmq，
+#       会先启动这些服务再启动backend。
+# 
+# - Q5：环境变量${VAR:-default}是什么意思？
+#   A5：从.env文件读取环境变量VAR，如果不存在则使用默认值default。
+#       例如：${MYSQL_ROOT_PASSWORD:-123456}
+# 
+# - Q6：端口映射"3306:3306"是什么意思？
+#   A6：宿主机端口:容器端口。访问宿主机3306端口，会转发到容器3306端口。
+# 
+# 部署命令：
+# 1. 配置环境变量：cp .env.example .env
+# 2. 启动服务：docker-compose up -d --build
+# 3. 查看日志：docker-compose logs -f
+# 4. 停止服务：docker-compose down
+# 
+# 参考文档：
+# - 梳理项目.md 七、文件目录结构
+# - 读我.md 部署命令
+# ============================================================
+
+version: '3.8'
 
 services:
+  # 【部署-01-MySQL服务】数据库服务
+  # 面试考点：为什么用MySQL 8.0？
+  # 答：支持窗口函数、CTE、JSON增强、性能优化
   mysql:
-    image: mysql:8.0.40
-    container_name: gbs-mysql
-    restart: unless-stopped
+    image: mysql:8.0                    # MySQL 8.0镜像
+    container_name: gbs-mysql           # 容器名称
+    restart: always                     # 自动重启策略
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-GbsMysqlPassw0rd}
-      MYSQL_DATABASE: gbs_commerce_system
-      TZ: Asia/Shanghai
-    command:
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_unicode_ci
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}  # root密码
+      MYSQL_DATABASE: gbs_commerce_system_02               # 初始化数据库
+      TZ: Asia/Shanghai                                      # 时区
+    ports:
+      - "3306:3306"                     # 端口映射：宿主机3306 -> 容器3306
     volumes:
-      - mysql-data:/var/lib/mysql
+      - mysql_data:/var/lib/mysql       # 数据持久化
+      - ./MYSQL/gbs_commerce_system_02.sql:/docker-entrypoint-initdb.d/init.sql  # 初始化SQL
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     networks:
-      - gbs-net
+      - gbs-network                     # 加入网络
 
-  backend:
-    image: ccr.ccs.tencentyun.com/supermarket/agent-backend:1.0.0
-    container_name: gbs-backend
-    restart: unless-stopped
-    depends_on:
-      - mysql
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/gbs_commerce_system?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
-      SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-GbsMysqlPassw0rd}
-      APP_UPLOAD_DIR: /data/uploads
-      TZ: Asia/Shanghai
+  # 【部署-01-Redis服务】缓存服务
+  # 面试考点：为什么用alpine镜像？
+  # 答：alpine是轻量级Linux，镜像小（约5MB），启动快
+  redis:
+    image: redis:7-alpine               # Redis 7 Alpine镜像（轻量级）
+    container_name: gbs-redis
+    restart: always
+    ports:
+      - "6379:6379"                     # Redis默认端口
     volumes:
-      - uploads-data:/data/uploads
+      - redis_data:/data                # 数据持久化
     networks:
-      - gbs-net
+      - gbs-network
+
+  # 【部署-01-RabbitMQ服务】消息队列服务
+  # 面试考点：为什么用management镜像？
+  # 答：包含Web管理界面，访问http://IP:15672可管理队列
+  rabbitmq:
+    image: rabbitmq:3-management-alpine # RabbitMQ 3 + 管理界面
+    container_name: gbs-rabbitmq
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}      # 用户名
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}  # 密码
+    ports:
+      - "5672:5672"                     # AMQP端口
+      - "15672:15672"                   # Web管理界面端口
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - gbs-network
+
+  # 【部署-01-后端服务】Java后端服务
+  backend:
+    build:
+      context: ./gbs_commerce_system    # 构建上下文
+      dockerfile: Dockerfile            # Dockerfile路径
+    container_name: gbs-backend
+    restart: always
+    depends_on:                         # 依赖服务（先启动）
+      - mysql
+      - redis
+      - rabbitmq
+    environment:
+      # 数据库配置（通过服务名访问）
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/gbs_commerce_system_02?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=GMT%2B8
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
+      # Redis配置
+      REDIS_HOST: redis                 # 服务名
+      REDIS_PORT: 6379
+      # RabbitMQ配置
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USER:-guest}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
+      # 华为ASR配置
+      HUAWEI_ASR_AK: ${HUAWEI_ASR_AK}
+      HUAWEI_ASR_SK: ${HUAWEI_ASR_SK}
+      HUAWEI_ASR_REGION: ${HUAWEI_ASR_REGION:-cn-north-4}
+      HUAWEI_ASR_PROJECT_ID: ${HUAWEI_ASR_PROJECT_ID}
+      BAIDU_AI_APP_ID: ${BAIDU_AI_APP_ID}
+      BAIDU_AI_API_KEY: ${BAIDU_AI_API_KEY}
+      BAIDU_AI_SECRET_KEY: ${BAIDU_AI_SECRET_KEY}
+      APP_UPLOAD_DIR: /uploads
+    ports:
+      - "8081:8081"
+    volumes:
+      - uploads:/uploads
+    networks:
+      - gbs-network
 
   frontend:
-    image: ccr.ccs.tencentyun.com/supermarket/agent-frontend:1.0.0
+    build:
+      context: ./gbs_commerce_system_ui
+      dockerfile: Dockerfile
     container_name: gbs-frontend
-    restart: unless-stopped
+    restart: always
     depends_on:
       - backend
     ports:
       - "80:80"
     networks:
-      - gbs-net
+      - gbs-network
+
+  mcp-server:
+    build:
+      context: ./gbs_commerce_system_ui/mcp_server
+      dockerfile: Dockerfile
+    container_name: gbs-mcp-server
+    restart: always
+    depends_on:
+      - mysql
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-123456}
+      DB_NAME: gbs_commerce_system_02
+      BAIDU_TTS_APP_ID: ${BAIDU_TTS_APP_ID}
+      BAIDU_TTS_API_KEY: ${BAIDU_TTS_API_KEY}
+      BAIDU_TTS_SECRET_KEY: ${BAIDU_TTS_SECRET_KEY}
+      HUAWEI_USERNAME: ${HUAWEI_USERNAME}
+      HUAWEI_PASSWORD: ${HUAWEI_PASSWORD}
+      HUAWEI_DOMAIN_NAME: ${HUAWEI_DOMAIN_NAME}
+      HUAWEI_PROJECT_ID: ${HUAWEI_PROJECT_ID}
+      HUAWEI_REGION: ${HUAWEI_REGION:-cn-north-4}
+    ports:
+      - "8000:8000"
+      - "8300:8300"
+      - "8765:8765"
+    networks:
+      - gbs-network
 
 volumes:
-  mysql-data:
-  uploads-data:
+  mysql_data:
+  redis_data:
+  rabbitmq_data:
+  uploads:
 
 networks:
-  gbs-net:
+  gbs-network:
     driver: bridge
