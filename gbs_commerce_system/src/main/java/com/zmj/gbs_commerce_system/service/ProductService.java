@@ -89,4 +89,6 @@ public interface ProductService {
      * @return 是否成功
      */
     boolean deleteBatchProducts(List<Long> ids);
+
+    int regenerateAllBarcodes();
 }

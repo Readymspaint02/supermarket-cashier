@@ -322,4 +322,15 @@ public class ProductController {
         }
         return result;
     }
+
+    @PostMapping("/regenerateBarcode")
+    @Operation(summary = "重新生成所有商品的条形码")
+    public Map<String, Object> regenerateAllBarcodes() {
+        int updated = productService.regenerateAllBarcodes();
+        Map<String, Object> result = new HashMap<>();
+        result.put("code", 200);
+        result.put("msg", "成功更新" + updated + "个商品的条形码");
+        result.put("data", updated);
+        return result;
+    }
 }

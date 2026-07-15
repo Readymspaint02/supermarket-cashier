@@ -266,5 +266,30 @@ public class ProductServiceImpl implements ProductService {
         }
         return true;
     }
+
+    @Override
+    @Transactional
+    public int regenerateAllBarcodes() {
+        List<Product> products = productMapper.selectList(
+            new QueryWrapper<Product>().eq("status", 0)
+        );
+        
+        int updated = 0;
+        for (Product product : products) {
+            String newBarcode = BarcodeUtil.generateEAN13();
+            product.setProductCode(newBarcode);
+            product.setBarcode(newBarcode);
+            productMapper.updateById(product);
+            
+            redisTemplate.delete(CACHE_PREFIX + product.getProductCode());
+            redisTemplate.delete(CACHE_PREFIX + "id:" + product.getId());
+            
+            log.info("商品条形码更新: id={}, productCode={}", product.getId(), newBarcode);
+            updated++;
+        }
+        
+        log.info("批量更新条形码完成，共更新{}个商品", updated);
+        return updated;
+    }
 }
 
