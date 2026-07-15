@@ -78,6 +78,18 @@ agentHttp.interceptors.request.use((config) => {
   return config;
 });
 
+agentHttp.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) {
+      const detail = error?.response?.data?.detail || '请登录后使用';
+      error.isAuthError = true;
+      error.authMessage = detail;
+    }
+    return Promise.reject(error);
+  }
+);
+
 export const sendAgentQuery = (message) => {
   return agentHttp.post('/agent_query', { query: message });
 };

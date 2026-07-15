@@ -3,15 +3,20 @@ import http from "../request";
 export const getAuthMenuList = async () => {
     const { code, data: authMenuList } = await http('/system/menu/list')
     if (code == 200) {
-        authMenuList.unshift({
+        const dashboardMenu = {
             id: 1,
             path: '/dashboard',
             menuName: '首页',
-            component: 'dashboard/index'
-        })
+            component: 'views/dashboard/index',
+            icon: 'HomeFilled',
+            parentId: 0,
+            children: []
+        }
+        const result = [dashboardMenu, ...authMenuList]
+        localStorage.setItem('authMenuList', JSON.stringify(result))
+        return result
     }
-    localStorage.setItem('authMenuList', JSON.stringify(authMenuList))
-    return authMenuList;
+    return []
 };
 // 获取所有菜单列表（用于菜单管理）
 export const getAllMenuList = async () => {
