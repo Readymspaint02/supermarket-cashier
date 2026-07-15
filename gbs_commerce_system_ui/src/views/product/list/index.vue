@@ -624,15 +624,29 @@ const fetchProductImage = async () => {
   
   fetchImageLoading.value = true;
   try {
-    const data = await http.get('/image/search', {
-      params: { keyword: formData.productName }
-    });
+    const keyword = encodeURIComponent(formData.productName);
+    const proxyUrl = `/api/image/proxy?type=sogou&keyword=${keyword}`;
     
-    if (data.code === 200 && data.data && data.data.length > 0) {
-      formData.productImage = data.data[0];
-      ElMessage.success(`图片获取成功，共找到${data.data.length}张`);
+    const response = await fetch(proxyUrl);
+    const html = await response.text();
+    
+    const imageUrls = parseImageUrls(html);
+    
+    if (imageUrls.length > 0) {
+      formData.productImage = imageUrls[0];
+      ElMessage.success(`图片获取成功，共找到${imageUrls.length}张`);
     } else {
-      ElMessage.warning('未找到相关图片，请手动上传');
+      const bingProxyUrl = `/api/image/proxy?type=bing&keyword=${keyword}`;
+      const bingResponse = await fetch(bingProxyUrl);
+      const bingHtml = await bingResponse.text();
+      const bingUrls = parseBingImageUrls(bingHtml);
+      
+      if (bingUrls.length > 0) {
+        formData.productImage = bingUrls[0];
+        ElMessage.success(`图片获取成功，共找到${bingUrls.length}张`);
+      } else {
+        ElMessage.warning('未找到相关图片，请手动上传');
+      }
     }
   } catch (error) {
     console.error('获取图片失败', error);
@@ -640,6 +654,49 @@ const fetchProductImage = async () => {
   } finally {
     fetchImageLoading.value = false;
   }
+};
+
+const parseImageUrls = (html) => {
+  const urls = [];
+  const patterns = [
+    /"thumbUrl"\s*:\s*"(https?:\/\/[^"]+)"/g,
+    /"picUrl"\s*:\s*"(https?:\/\/[^"]+)"/g,
+    /"oriPicUrl"\s*:\s*"(https?:\/\/[^"]+)"/g
+  ];
+  
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(html)) !== null && urls.length < 5) {
+      const url = match[1].replace(/\\\//g, '/');
+      if (!url.includes('sogou.com/static') && !urls.includes(url)) {
+        urls.push(url);
+      }
+    }
+    if (urls.length > 0) break;
+  }
+  
+  return urls;
+};
+
+const parseBingImageUrls = (html) => {
+  const urls = [];
+  const patterns = [
+    /murl"\s*:\s*"(https?:\/\/[^"]+)"/g,
+    /"imgurl"\s*:\s*"(https?:\/\/[^"]+)"/g
+  ];
+  
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(html)) !== null && urls.length < 5) {
+      const url = match[1].replace(/\\\//g, '/');
+      if (!url.includes('bing.com') && !urls.includes(url)) {
+        urls.push(url);
+      }
+    }
+    if (urls.length > 0) break;
+  }
+  
+  return urls;
 };
 </script>
 
