@@ -113,12 +113,14 @@ public class JwtFilter extends AccessControlFilter {
             if (requestURI.endsWith("/auth/login") ||           // 登录接口
                     requestURI.endsWith("/auth/faceLogin") ||    // 人脸登录
                     requestURI.endsWith("/auth/register")||      // 注册接口
-                    requestURI.contains("/api/uploads/")||       // 上传的静态资源
-                    requestURI.contains("/api/swagger-ui") ||    // Swagger文档
-                    requestURI.contains("/api/v3/api-docs") ||
-                    requestURI.contains("/api/swagger-resources") ||
-                    requestURI.contains("/api/webjars") ||
-                    requestURI.endsWith("/api/doc.html")) {
+                    requestURI.contains("/uploads/")||           // 上传的静态资源
+                    requestURI.contains("/swagger-ui") ||        // Swagger文档
+                    requestURI.contains("/v3/api-docs") ||
+                    requestURI.contains("/swagger-resources") ||
+                    requestURI.contains("/webjars") ||
+                    requestURI.endsWith("/doc.html") ||
+                    requestURI.contains("/image/") ||            // 图片搜索接口
+                    requestURI.contains("/public/")) {           // 公开接口
                 return true; // 匿名接口直接放行
             }
         }

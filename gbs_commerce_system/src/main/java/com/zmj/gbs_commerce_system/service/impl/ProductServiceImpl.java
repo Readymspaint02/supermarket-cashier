@@ -37,7 +37,7 @@ public class ProductServiceImpl implements ProductService {
     @Autowired
     private RedisTemplate<String, Object> redisTemplate;
 
-    @Value("${upload.path:uploads}")
+    @Value("${app.upload-dir:D:/uploads}")
     private String uploadPath;
 
     private static final String CACHE_PREFIX = "product:";
