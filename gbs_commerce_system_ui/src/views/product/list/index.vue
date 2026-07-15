@@ -810,6 +810,7 @@ const getBatchImagePreview = () => {
   const firstItem = batchImageCache.value[0];
   return firstItem ? firstItem.selectedImage : '';
 };
+</script>
 
 <style scoped>
 .product-container {
