@@ -59,6 +59,7 @@
             <template v-for="item in authMenuList" :key="item.id">
               <el-sub-menu v-if="item.children && item.children.length > 0" :index="item.path">
                 <template #title>
+                  <el-icon><component :is="getMenuIcon(item.path)" /></el-icon>
                   <span>{{ item.menuName }}</span>
                 </template>
                 <el-menu-item
@@ -66,10 +67,12 @@
                   :key="child.id"
                   :index="child.path"
                 >
+                  <el-icon><component :is="getMenuIcon(child.path)" /></el-icon>
                   <span>{{ child.menuName }}</span>
                 </el-menu-item>
               </el-sub-menu>
               <el-menu-item v-else :index="item.path">
+                <el-icon><component :is="getMenuIcon(item.path)" /></el-icon>
                 <span>{{ item.menuName }}</span>
               </el-menu-item>
             </template>
@@ -129,7 +132,7 @@
 import { ref, reactive,onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowDown } from '@element-plus/icons-vue'
+import { ArrowDown, HomeFilled, Goods, ShoppingCart, User, Document, DataAnalysis, Setting, Grid, Money, List } from '@element-plus/icons-vue'
 import { changePassword } from '@/api/modules/user'
 import defaultAvatar from '@/assets/anon.jpeg'
 import { he } from 'element-plus/es/locales.mjs'
@@ -265,6 +268,32 @@ const getCurrentUser = () => {
 onMounted(() => {
   getCurrentUser()
 })
+
+const getMenuIcon = (path) => {
+  const iconMap = {
+    '/dashboard': HomeFilled,
+    '/product': Goods,
+    '/product/list': List,
+    '/product/category': Grid,
+    '/cashier': ShoppingCart,
+    '/cashier/checkout': Money,
+    '/cashier/order': Document,
+    '/inventory': Goods,
+    '/inventory/stock': DataAnalysis,
+    '/inventory/in': Document,
+    '/inventory/out': Document,
+    '/report': DataAnalysis,
+    '/report/sales': DataAnalysis,
+    '/report/alert': Document,
+    '/report/assistant': User,
+    '/system': Setting,
+    '/system/user': User,
+    '/system/role': User,
+    '/system/menu': List,
+    '/system/test': Setting,
+  }
+  return iconMap[path] || Document
+}
 </script>
 
 <style scoped>

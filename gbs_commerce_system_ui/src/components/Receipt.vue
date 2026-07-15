@@ -23,7 +23,7 @@
         </div>
         <div class="info-row" v-if="order?.memberId">
           <span>会员：</span>
-          <span>{{ order.memberId }}</span>
+          <span>{{ order.memberName || order.memberId }}</span>
         </div>
       </div>
       
@@ -128,7 +128,7 @@ const formatTime = (time) => {
 }
 
 const getPaymentMethodName = (method) => {
-  const map = { 1: '现金', 2: '微信', 3: '支付宝', 4: '银行卡', 5: '刷脸支付' }
+  const map = { 1: '现金', 2: '微信', 3: '支付宝', 4: '银行卡', 5: '刷脸支付', 6: '余额支付' }
   return map[method] || '-'
 }
 
