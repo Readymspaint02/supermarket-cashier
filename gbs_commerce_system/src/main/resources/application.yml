@@ -67,7 +67,7 @@ baidu:
     app-id: ${BAIDU_AI_APP_ID:}
     api-key: ${BAIDU_AI_API_KEY:}
     secret-key: ${BAIDU_AI_SECRET_KEY:}
-    group-id: ${BAIDU_AI_GROUP_ID:}
+    group-id: ${BAIDU_AI_GROUP_ID:test_face_01}
 
 huawei:
   asr:
