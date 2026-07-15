@@ -2,9 +2,12 @@ package com.zmj.gbs_commerce_system.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.zmj.gbs_commerce_system.dto.RechargeRequest;
 import com.zmj.gbs_commerce_system.entity.Member;
+import com.zmj.gbs_commerce_system.entity.RechargeRecord;
 import com.zmj.gbs_commerce_system.service.MemberService;
 import com.zmj.gbs_commerce_system.utils.PageParams;
+import com.zmj.gbs_commerce_system.utils.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -14,6 +17,7 @@ import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -68,7 +72,7 @@ public class MemberController {
     }
 
     @GetMapping("/byMemberId/{memberId}")
-    @Operation(summary = "根据会员编号查询会员")
+    @Operation(summary = "根据会员编号或手机号查询会员")
     public Map<String, Object> getByMemberId(@PathVariable String memberId) {
         Map<String, Object> result = new HashMap<>();
         if (memberId == null || memberId.isEmpty()) {
@@ -77,6 +81,9 @@ public class MemberController {
             return result;
         }
         Member member = memberService.findByMemberId(memberId);
+        if (member == null) {
+            member = memberService.findByPhone(memberId);
+        }
         if (member == null) {
             result.put("code", 500);
             result.put("msg", "会员不存在");
@@ -124,6 +131,34 @@ public class MemberController {
         boolean success = memberService.deleteMember(id);
         result.put("code", success ? 200 : 500);
         result.put("msg", success ? "删除成功" : "删除失败");
+        return result;
+    }
+
+    @PostMapping("/recharge")
+    @Operation(summary = "会员充值")
+    public Map<String, Object> recharge(@RequestBody RechargeRequest request) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            String operator = "系统";
+            try {
+                operator = SecurityUtils.getCurrentUser().getNickname();
+            } catch (Exception ignored) {}
+            
+            RechargeRecord record = memberService.recharge(
+                request.getMemberId(),
+                request.getRechargeAmount(),
+                request.getGiftAmount(),
+                request.getPointsToAdd(),
+                operator,
+                request.getRemark()
+            );
+            result.put("code", 200);
+            result.put("msg", "充值成功");
+            result.put("data", record);
+        } catch (Exception e) {
+            result.put("code", 500);
+            result.put("msg", "充值失败: " + e.getMessage());
+        }
         return result;
     }
 }

@@ -10,4 +10,7 @@ public interface MemberMapper extends BaseMapper<Member> {
 
     @Select("SELECT * FROM members WHERE member_id = #{memberId} LIMIT 1")
     Member selectByMemberId(String memberId);
+
+    @Select("SELECT * FROM members WHERE phone = #{phone} LIMIT 1")
+    Member selectByPhone(String phone);
 }
