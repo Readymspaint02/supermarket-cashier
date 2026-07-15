@@ -52,6 +52,42 @@
       </el-form>
 
       <!-- 数据表格 -->
+      <div class="batch-actions" style="margin-bottom: 10px">
+        <el-button 
+          type="success" 
+          :loading="batchImageLoading"
+          @click="handleBatchGetImages"
+        >
+          <el-icon><Picture /></el-icon>
+          批量获取图片
+        </el-button>
+        <el-button 
+          type="warning" 
+          :disabled="!batchImageCache.length"
+          @click="handleBatchChangeImage"
+        >
+          <el-icon><Refresh /></el-icon>
+          批量换一张 ({{ batchImageCache.length || 0 }}个商品)
+        </el-button>
+        <el-button 
+          type="primary" 
+          :disabled="!batchImageCache.length"
+          @click="handleBatchConfirm"
+        >
+          <el-icon><Check /></el-icon>
+          批量确定保存
+        </el-button>
+        <el-button 
+          type="info"
+          :disabled="!batchImageCache.length"
+          @click="batchImageCache = []; batchImageIndex = 0"
+        >
+          取消
+        </el-button>
+        <span v-if="batchImageCache.length" style="margin-left: 10px; color: #409EFF;">
+          已获取 {{ batchImageCache.length }} 个商品的图片，点击"批量换一张"可切换图片
+        </span>
+      </div>
       <el-table
         :data="tableData"
         style="width: 100%"
@@ -315,7 +351,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Plus, Camera, Picture, Refresh } from '@element-plus/icons-vue';
+import { Plus, Camera, Picture, Refresh, Check } from '@element-plus/icons-vue';
 import {
   getProductPage,
   addProduct,
@@ -339,6 +375,10 @@ const scannerDialogVisible = ref(false);
 const fetchImageLoading = ref(false);
 const searchedImageUrls = ref([]);
 const currentImageIndex = ref(0);
+
+const batchImageLoading = ref(false);
+const batchImageCache = ref([]);
+const batchImageIndex = ref(0);
 
 // 上传headers（计算属性，自动响应token变化）
 const uploadHeaders = computed(() => ({
@@ -668,7 +708,108 @@ const nextImage = () => {
   formData.productImage = searchedImageUrls.value[currentImageIndex.value];
 };
 
-</script>
+const handleBatchGetImages = async () => {
+  const productsWithoutImage = tableData.value.filter(p => !p.productImage);
+  
+  if (productsWithoutImage.length === 0) {
+    ElMessage.warning('当前页面所有商品都有图片了');
+    return;
+  }
+  
+  batchImageLoading.value = true;
+  batchImageCache.value = [];
+  batchImageIndex.value = 0;
+  
+  let successCount = 0;
+  let failCount = 0;
+  
+  for (const product of productsWithoutImage) {
+    try {
+      const data = await http.get('/image/search', {
+        params: { keyword: product.productName }
+      });
+      
+      if (data.code === 200 && data.data && data.data.length > 0) {
+        batchImageCache.value.push({
+          productId: product.id,
+          productName: product.productName,
+          images: data.data,
+          currentIndex: 0,
+          selectedImage: data.data[0]
+        });
+        successCount++;
+      } else {
+        failCount++;
+      }
+    } catch (error) {
+      failCount++;
+    }
+  }
+  
+  batchImageLoading.value = false;
+  ElMessage.success('批量获取完成：成功' + successCount + '个，失败' + failCount + '个');
+};
+
+const handleBatchChangeImage = () => {
+  if (batchImageCache.value.length === 0) return;
+  
+  batchImageIndex.value++;
+  if (batchImageIndex.value >= batchImageCache.value.length) {
+    batchImageIndex.value = 0;
+  }
+  
+  for (const item of batchImageCache.value) {
+    item.currentIndex++;
+    if (item.currentIndex >= item.images.length) {
+      item.currentIndex = 0;
+    }
+    item.selectedImage = item.images[item.currentIndex];
+  }
+};
+
+const handleBatchConfirm = async () => {
+  if (batchImageCache.value.length === 0) {
+    ElMessage.warning('请先批量获取图片');
+    return;
+  }
+  
+  const confirmedCount = batchImageCache.value.length;
+  
+  ElMessageBox.confirm(
+    '确认要为 ' + confirmedCount + ' 个商品保存新图片吗？',
+    '批量保存确认',
+    { type: 'info' }
+  ).then(async () => {
+    let successCount = 0;
+    let failCount = 0;
+    
+    for (const item of batchImageCache.value) {
+      try {
+        const res = await updateProduct(item.productId, {
+          productImage: item.selectedImage
+        });
+        if (res.code === 200) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch (error) {
+        failCount++;
+      }
+    }
+    
+    ElMessage.success('批量保存完成：成功' + successCount + '个，失败' + failCount + '个');
+    batchImageCache.value = [];
+    batchImageIndex.value = 0;
+    loadTableData();
+  }).catch(() => {});
+};
+
+const getBatchImagePreview = () => {
+  if (batchImageCache.value.length === 0) return '';
+  const firstItem = batchImageCache.value[0];
+  return firstItem ? firstItem.selectedImage : '';
+};
 
 <style scoped>
 .product-container {
