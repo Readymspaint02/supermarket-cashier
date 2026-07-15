@@ -23,6 +23,7 @@
             v-model="searchForm.orderStatus"
             placeholder="请选择订单状态"
             clearable
+            style="width: 120px"
             @clear="handleSearch"
           >
             <el-option label="已完成" :value="1" />
@@ -34,12 +35,15 @@
             v-model="searchForm.paymentMethod"
             placeholder="请选择支付方式"
             clearable
+            style="width: 120px"
             @clear="handleSearch"
           >
             <el-option label="现金" :value="1" />
             <el-option label="微信" :value="2" />
             <el-option label="支付宝" :value="3" />
             <el-option label="银行卡" :value="4" />
+            <el-option label="刷脸支付" :value="5" />
+            <el-option label="余额支付" :value="6" />
           </el-select>
         </el-form-item>
         <el-form-item label="时间范围">
@@ -96,6 +100,11 @@
           </template>
         </el-table-column>
         <el-table-column prop="cashierName" label="收银员" width="120" />
+        <el-table-column prop="memberName" label="会员" width="120">
+          <template #default="{ row }">
+            {{ row.memberName || row.memberId || '-' }}
+          </template>
+        </el-table-column>
         <el-table-column prop="createTime" label="创建时间" width="180" />
         <el-table-column label="操作" width="200" align="center" fixed="right">
           <template #default="{ row }">
@@ -165,6 +174,9 @@
           </el-descriptions-item>
           <el-descriptions-item label="收银员">
             {{ currentOrder.cashierName }}
+          </el-descriptions-item>
+          <el-descriptions-item label="会员" v-if="currentOrder.memberId">
+            {{ currentOrder.memberName || currentOrder.memberId }}
           </el-descriptions-item>
           <el-descriptions-item label="创建时间">
             {{ currentOrder.createTime }}
@@ -382,7 +394,9 @@ const getPaymentMethodName = (method) => {
     1: '现金',
     2: '微信',
     3: '支付宝',
-    4: '银行卡'
+    4: '银行卡',
+    5: '刷脸支付',
+    6: '余额支付'
   };
   return map[method] || '-';
 };
