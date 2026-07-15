@@ -1,11 +1,16 @@
 # 敏感配置文件
-.env.secrets
+.env
+.env.local
+.env.*.local
 *.env.secrets
+.secrets.yml
 
 # IDE
 .idea/
 .vscode/
 *.iml
+*.ipr
+*.iws
 
 # 编译产物
 target/
@@ -15,16 +20,47 @@ __pycache__/
 *.pyc
 *.class
 *.jar
+*.war
+*.nar
 
 # 日志
 *.log
+logs/
 
 # 系统文件
 .DS_Store
 Thumbs.db
+ehthumbs.db
 
 # 临时文件
 *.tmp
 *.temp
 *.swp
 *~
+*.bak
+
+# 上传文件目录
+uploads/
+
+# 测试相关
+test/apache-jmeter-*/
+test/screenshots/
+test/html-report/
+*.zip
+
+# 备份和数据目录
+data_*/
+*.tar.gz
+
+# 副本文件
+*副本*
+* - 副本*
+
+# 个人文档
+*.md
+!README.md
+!DEPLOY.md
+
+# 配置文件中的硬编码敏感信息
+application-local.yml
+application-local.properties
