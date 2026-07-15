@@ -144,6 +144,9 @@ public class ShiroConfig {
         // 公开接口（电子小票查询，无需登录）
         filterChainDefinitionMap.put("/public/order/**", "anon");
 
+        // 图片爬取接口（无需登录）
+        filterChainDefinitionMap.put("/image/**", "anon");
+
         // ===== 2. 需要JWT认证（登录后即可访问）=====
         // 这些接口只需要登录，不需要特定权限
         // 权限控制在Controller的@RequiresPermissions注解中

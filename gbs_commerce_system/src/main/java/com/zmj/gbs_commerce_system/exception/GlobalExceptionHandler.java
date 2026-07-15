@@ -67,7 +67,7 @@ public class GlobalExceptionHandler {
         logger.error("系统异常: ", e);
         Map<String, Object> result = new HashMap<>();
         result.put("code", 500);
-        result.put("msg", "系统内部错误");
+        result.put("msg", "系统内部错误: " + e.getMessage());
         return result;
     }
 }
