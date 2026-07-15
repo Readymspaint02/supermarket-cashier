@@ -63,11 +63,17 @@
           <template #default="{ row }">
             <el-image
               v-if="row.productImage"
-              :src="row.productImage"
-              :preview-src-list="[row.productImage]"
+              :src="getImageUrl(row.productImage)"
+              :preview-src-list="[getImageUrl(row.productImage)]"
               fit="cover"
               style="width: 60px; height: 60px; border-radius: 4px"
-            />
+            >
+              <template #error>
+                <div class="image-slot">
+                  <el-icon><Picture /></el-icon>
+                </div>
+              </template>
+            </el-image>
             <span v-else>暂无图片</span>
           </template>
         </el-table-column>
@@ -225,7 +231,7 @@
             >
               <img
                 v-if="formData.productImage"
-                :src="formData.productImage"
+                :src="getImageUrl(formData.productImage)"
                 class="avatar"
               />
               <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
@@ -307,6 +313,7 @@ import {
   deleteProduct
 } from '@/api/modules/product';
 import { getCategoryTree } from '@/api/modules/productCategory';
+import http from '@/api/request';
 import BarcodeScanner from '@/components/BarcodeScanner.vue';
 
 // ==================== 数据定义 ====================
@@ -598,6 +605,17 @@ const handleBarcodeDetected = (code) => {
   }
 };
 
+const getImageUrl = (url) => {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+  if (url.startsWith('/uploads/')) {
+    return `/api${url}`;
+  }
+  return `/api/uploads/${url}`;
+};
+
 const fetchProductImage = async () => {
   if (!formData.productName) {
     ElMessage.warning('请先输入商品名称');
@@ -606,30 +624,19 @@ const fetchProductImage = async () => {
   
   fetchImageLoading.value = true;
   try {
-    const response = await fetch(
-      `https://api.unsplash.com/photos/random?query=${encodeURIComponent(formData.productName)}&orientation=squarish`,
-      {
-        headers: {
-          'Authorization': 'Client-ID YOUR_UNSPLASH_ACCESS_KEY'
-        }
-      }
-    );
+    const data = await http.get('/image/search', {
+      params: { keyword: formData.productName }
+    });
     
-    if (!response.ok) {
-      throw new Error('API请求失败');
-    }
-    
-    const data = await response.json();
-    
-    if (data && data.urls && data.urls.small) {
-      formData.productImage = data.urls.small;
-      ElMessage.success('图片获取成功');
+    if (data.code === 200 && data.data && data.data.length > 0) {
+      formData.productImage = data.data[0];
+      ElMessage.success(`图片获取成功，共找到${data.data.length}张`);
     } else {
-      ElMessage.warning('未找到合适的图片，请手动上传');
+      ElMessage.warning('未找到相关图片，请手动上传');
     }
   } catch (error) {
     console.error('获取图片失败', error);
-    ElMessage.error('自动获取图片失败，请手动上传或配置Unsplash API密钥');
+    ElMessage.error('自动获取图片失败，请手动上传');
   } finally {
     fetchImageLoading.value = false;
   }
@@ -706,6 +713,16 @@ const fetchProductImage = async () => {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+}
+
+.image-slot {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  background: #f5f7fa;
+  color: #909399;
 }
 </style>
 
