@@ -11,10 +11,6 @@ SERVICES=(
   "Baidu_TTS_HTTP_test.py"
   "Member_Service_HTTP_test.py"
   "Order_Service_HTTP_test.py"
-  "Baidu_TTS_MCP.py"
-  "Member_Service_MCP.py"
-  "Order_Service_MCP.py"
-  "Huawei_ASR_MCP.py"
   "Agent_HTTP_Proxy.py"
 )
 

@@ -114,9 +114,13 @@ def tts_health_check() -> str:
 
 
 if __name__ == "__main__":
-    # 启动 MCP 服务器，默认 SSE 方式，端口可按需调整
-    mcp.settings.host = "0.0.0.0"
-    mcp.settings.port = 8001
-    print("Baidu TTS MCP 服务器启动在端口 8001")
-    mcp.run(transport="sse")
+    import sys
+    transport = sys.argv[1] if len(sys.argv) > 1 else "stdio"
+    if transport == "sse":
+        mcp.settings.host = "0.0.0.0"
+        mcp.settings.port = 8001
+        print("Baidu TTS MCP 服务器启动在端口 8001")
+        mcp.run(transport="sse")
+    else:
+        mcp.run(transport="stdio")
 

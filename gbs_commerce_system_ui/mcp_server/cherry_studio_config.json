@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "smartmarket": {
+      "command": "uv",
+      "args": ["run", "Unified_MCP_Service.py"],
+      "cwd": "mcp_server目录的绝对路径",
+      "env": {
+        "MYSQL_HOST": "gbs-mysql",
+        "MYSQL_PORT": "3306",
+        "MYSQL_DATABASE": "gbs_commerce_system",
+        "MYSQL_USER": "root",
+        "MYSQL_PASSWORD": "GbsMysqlPassw0rd",
+        "BAIDU_TTS_APP_ID": "你的百度TTS AppID",
+        "BAIDU_TTS_API_KEY": "你的百度TTS API Key",
+        "BAIDU_TTS_SECRET_KEY": "你的百度TTS Secret Key"
+      }
+    }
+  }
+}

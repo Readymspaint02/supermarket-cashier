@@ -63,7 +63,12 @@ def member_health_check() -> str:
 
 
 if __name__ == "__main__":
-    mcp.settings.host = "0.0.0.0"
-    mcp.settings.port = 8301
-    print("Member Service MCP 监听端口 8301 (SSE)")
-    mcp.run(transport="sse")
+    import sys
+    transport = sys.argv[1] if len(sys.argv) > 1 else "stdio"
+    if transport == "sse":
+        mcp.settings.host = "0.0.0.0"
+        mcp.settings.port = 8301
+        print("Member Service MCP 监听端口 8301 (SSE)")
+        mcp.run(transport="sse")
+    else:
+        mcp.run(transport="stdio")

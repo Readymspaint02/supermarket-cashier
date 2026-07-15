@@ -1,0 +1,9 @@
+mcp
+aiohttp
+requests
+websockets
+baidu-aip
+pymysql
+cryptography
+huaweicloudsdkcore
+huaweicloudsdksis
