@@ -126,8 +126,8 @@ docker-compose up -d --build
 ## 在线体验
 
 - 演示地址：https://ryo.jufu.vip
-- GitHub：https://github.com/Readymspaint02/ArtPick-
-
+- GitHub：https://github.com/Readymspaint02/supermarket-cashier
+  
 ## 单元测试
 
 ```bash
@@ -156,8 +156,8 @@ mvn test
 ## 作者
 
 **朱铭杰**
-- 邮箱：3500498546@qq.com
-- 个人博客：https://iloveartwork.com
+- 邮箱：ryo210856837@gmail.com
+  
 
 ## License
 
