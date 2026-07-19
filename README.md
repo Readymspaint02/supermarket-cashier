@@ -127,7 +127,6 @@ docker-compose up -d --build
 
 - 演示地址：https://ryo.jufu.vip
 - GitHub：https://github.com/Readymspaint02/supermarket-cashier
-- 
 ## 单元测试
 
 ```bash
@@ -157,7 +156,6 @@ mvn test
 
 **朱铭杰**
 - 邮箱：ryo210856837@gmail.com
-- 
   
 ## License
 
